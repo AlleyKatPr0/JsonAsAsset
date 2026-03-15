@@ -1,0 +1,12 @@
+asset:
+  class: Material
+  name: M_SimpleTexture
+  path: /Game/Generated
+
+nodes:
+  base_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_BaseColor
+
+outputs:
+  BaseColor: base_tex.RGB
