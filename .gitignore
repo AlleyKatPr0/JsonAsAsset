@@ -94,3 +94,8 @@ _[Ss]cripts
 *.sln
 .idea/
 
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
