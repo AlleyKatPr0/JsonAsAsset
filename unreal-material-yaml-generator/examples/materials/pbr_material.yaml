@@ -1,0 +1,27 @@
+asset:
+  class: Material
+  name: M_PBRExample
+  path: /Game/Generated
+
+nodes:
+  base_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_BaseColor
+
+  normal_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_Normal
+
+  roughness:
+    type: Constant
+    value: 0.6
+
+  metallic:
+    type: Constant
+    value: 1.0
+
+outputs:
+  BaseColor: base_tex.RGB
+  Normal: normal_tex.RGB
+  Roughness: roughness
+  Metallic: metallic

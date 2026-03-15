@@ -1,0 +1,23 @@
+asset:
+  class: Material
+  name: M_MultiplyExample
+  path: /Game/Generated
+
+nodes:
+  base_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_BaseColor
+
+  tint_color:
+    type: Constant3Vector
+    vector: [0.8, 0.4, 0.2]
+
+  multiply_1:
+    type: Multiply
+
+connections:
+  - base_tex.RGB -> multiply_1.A
+  - tint_color.RGB -> multiply_1.B
+
+outputs:
+  BaseColor: multiply_1
