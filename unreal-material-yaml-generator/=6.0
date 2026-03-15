@@ -1,0 +1,8 @@
+Defaulting to user installation because normal site-packages is not writeable
+Requirement already satisfied: PyYAML in /usr/lib/python3/dist-packages (6.0.1)
+Collecting graphviz
+  Downloading graphviz-0.21-py3-none-any.whl.metadata (12 kB)
+Downloading graphviz-0.21-py3-none-any.whl (47 kB)
+   ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 47.3/47.3 kB 15.3 MB/s eta 0:00:00
+Installing collected packages: graphviz
+Successfully installed graphviz-0.21
