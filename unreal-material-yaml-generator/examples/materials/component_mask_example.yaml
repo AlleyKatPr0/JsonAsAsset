@@ -1,0 +1,52 @@
+asset:
+  class: Material
+  name: M_ComponentMaskExample
+  path: /Game/Generated
+
+# This example shows how to use a ComponentMask node to extract individual
+# channels from a packed texture (e.g. ORM: Occlusion/Roughness/Metallic).
+nodes:
+  orm_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_ORM
+    node_pos_x: -600
+    node_pos_y: 0
+
+  # Extract the R channel (Occlusion).
+  occlusion_mask:
+    type: ComponentMask
+    r: true
+    g: false
+    b: false
+    a: false
+    node_pos_x: -300
+    node_pos_y: -100
+
+  # Extract the G channel (Roughness).
+  roughness_mask:
+    type: ComponentMask
+    r: false
+    g: true
+    b: false
+    a: false
+    node_pos_x: -300
+    node_pos_y: 0
+
+  # Extract the B channel (Metallic).
+  metallic_mask:
+    type: ComponentMask
+    r: false
+    g: false
+    b: true
+    a: false
+    node_pos_x: -300
+    node_pos_y: 100
+
+connections:
+  - orm_tex -> occlusion_mask
+  - orm_tex -> roughness_mask
+  - orm_tex -> metallic_mask
+
+outputs:
+  Roughness: roughness_mask
+  Metallic:  metallic_mask

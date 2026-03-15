@@ -141,6 +141,33 @@ def parse_yaml(source: Union[str, Path]) -> GraphAsset:
         outputs.append(output)
         logger.debug("  Output %r <- %r", prop_name, output.source)
 
+    # -- validate that connections reference declared nodes ------------------
+    for conn in connections:
+        src_node_name = conn.source.split(".", maxsplit=1)[0]
+        dst_node_name = conn.destination.split(".", maxsplit=1)[0]
+        if src_node_name not in nodes:
+            available = ", ".join(sorted(nodes)) or "<none>"
+            raise ValueError(
+                f"Connection source node '{src_node_name}' is not defined in the "
+                f"nodes section. Available nodes: {available}"
+            )
+        if dst_node_name not in nodes:
+            available = ", ".join(sorted(nodes)) or "<none>"
+            raise ValueError(
+                f"Connection destination node '{dst_node_name}' is not defined in the "
+                f"nodes section. Available nodes: {available}"
+            )
+
+    # -- validate that outputs reference declared nodes ----------------------
+    for output in outputs:
+        src_node_name = output.source.split(".", maxsplit=1)[0]
+        if src_node_name not in nodes:
+            available = ", ".join(sorted(nodes)) or "<none>"
+            raise ValueError(
+                f"Output '{output.property}' references undefined node "
+                f"'{src_node_name}'. Available nodes: {available}"
+            )
+
     return GraphAsset(
         class_name=class_name,
         asset_name=asset_name,

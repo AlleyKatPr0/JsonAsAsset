@@ -91,13 +91,21 @@ unreal-material-yaml-generator/
 │   └── materials/
 │       ├── simple_texture.yaml           Single texture → BaseColor
 │       ├── pbr_material.yaml             Full PBR material
-│       └── multiply_example.yaml         Texture × tint color
+│       ├── multiply_example.yaml         Texture × tint color
+│       ├── component_mask_example.yaml   Packed-texture channel extraction
+│       ├── texture_coordinate_example.yaml  Tiled UV sampling
+│       ├── static_switch_example.yaml    Compile-time detail normal switch
+│       ├── material_function_example.yaml   Calling a MaterialFunction
+│       └── parameter_metadata_example.yaml  Groups, slider ranges & sort order
 │
 ├── tools/
 │   ├── graph_model.py                    Intermediate graph dataclasses
 │   ├── graph_parser.py                   YAML → GraphAsset parser
 │   ├── unreal_material_backend.py        Unreal Python API integration
 │   └── material_builder.py              Entry script / public API
+│
+├── tests/
+│   └── test_graph_parser.py             Unit tests (no Unreal required)
 │
 ├── README.md
 └── requirements.txt
@@ -127,25 +135,40 @@ outputs:
 
 ### Supported Node Types
 
-| YAML `type`        | Unreal Expression Class                     |
-|--------------------|---------------------------------------------|
-| `TextureSample`    | `MaterialExpressionTextureSample`           |
-| `Multiply`         | `MaterialExpressionMultiply`                |
-| `Add`              | `MaterialExpressionAdd`                     |
-| `Constant`         | `MaterialExpressionConstant`                |
-| `Constant3Vector`  | `MaterialExpressionConstant3Vector`         |
-| `ScalarParameter`  | `MaterialExpressionScalarParameter`         |
-| `VectorParameter`  | `MaterialExpressionVectorParameter`         |
+| YAML `type`              | Unreal Expression Class                             |
+|--------------------------|-----------------------------------------------------|
+| `TextureSample`          | `MaterialExpressionTextureSample`                   |
+| `Multiply`               | `MaterialExpressionMultiply`                        |
+| `Add`                    | `MaterialExpressionAdd`                             |
+| `Constant`               | `MaterialExpressionConstant`                        |
+| `Constant3Vector`        | `MaterialExpressionConstant3Vector`                 |
+| `ScalarParameter`        | `MaterialExpressionScalarParameter`                 |
+| `VectorParameter`        | `MaterialExpressionVectorParameter`                 |
+| `FunctionCall`           | `MaterialExpressionMaterialFunctionCall`            |
+| `StaticSwitchParameter`  | `MaterialExpressionStaticSwitchParameter`           |
+| `ComponentMask`          | `MaterialExpressionComponentMask`                   |
+| `TextureCoordinate`      | `MaterialExpressionTextureCoordinate`               |
 
 ### Node Properties
 
-| Property         | Applicable Types          | Description |
-|------------------|---------------------------|-------------|
-| `texture`        | `TextureSample`           | Content Browser path to a texture asset |
-| `value`          | `Constant`, `ScalarParameter` | Float value |
-| `vector`         | `Constant3Vector`, `VectorParameter` | `[r, g, b]` or `[r, g, b, a]` |
-| `parameter_name` | `ScalarParameter`, `VectorParameter` | Parameter name exposed on instances |
-| `default_value`  | `ScalarParameter`         | Default parameter value |
+| Property           | Applicable Types                              | Description |
+|--------------------|-----------------------------------------------|-------------|
+| `texture`          | `TextureSample`                               | Content Browser path to a texture asset |
+| `material_function`| `FunctionCall`                                | Content Browser path to a MaterialFunction asset |
+| `value`            | `Constant`, `ScalarParameter`                 | Float value |
+| `vector`           | `Constant3Vector`, `VectorParameter`          | `[r, g, b]` or `[r, g, b, a]` |
+| `r` / `g` / `b` / `a` | `ComponentMask`                           | Boolean channel selectors |
+| `coordinate_index` | `TextureCoordinate`                           | UV set index (0-based) |
+| `u_tiling`         | `TextureCoordinate`                           | U tiling scale |
+| `v_tiling`         | `TextureCoordinate`                           | V tiling scale |
+| `parameter_name`   | `ScalarParameter`, `VectorParameter`, `StaticSwitchParameter` | Parameter name on instances |
+| `default_value`    | `ScalarParameter` (float), `StaticSwitchParameter` (bool) | Default parameter value |
+| `group`            | `ScalarParameter`, `VectorParameter`, `StaticSwitchParameter` | Parameter group in instance editor |
+| `sort_priority`    | `ScalarParameter`, `VectorParameter`, `StaticSwitchParameter` | Sort order within the group |
+| `slider_min`       | `ScalarParameter`                             | Editor slider lower bound |
+| `slider_max`       | `ScalarParameter`                             | Editor slider upper bound |
+| `node_pos_x`       | Any                                           | Graph node X position (pixels) |
+| `node_pos_y`       | Any                                           | Graph node Y position (pixels) |
 
 ### Supported Material Output Properties
 
@@ -275,11 +298,114 @@ outputs:
   BaseColor: multiply_1
 ```
 
+### Component Mask (`examples/materials/component_mask_example.yaml`)
+
+Unpacks a packed ORM texture (Occlusion/Roughness/Metallic) using
+`ComponentMask` to extract individual channels.
+
+```yaml
+nodes:
+  orm_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_ORM
+    node_pos_x: -600
+    node_pos_y: 0
+
+  roughness_mask:
+    type: ComponentMask
+    r: false
+    g: true
+    b: false
+    a: false
+    node_pos_x: -300
+    node_pos_y: 0
+
+connections:
+  - orm_tex -> roughness_mask
+
+outputs:
+  Roughness: roughness_mask
+```
+
+### Texture Coordinate (`examples/materials/texture_coordinate_example.yaml`)
+
+Uses `TextureCoordinate` to tile a texture 2× in both UV axes.
+
+```yaml
+nodes:
+  tiled_uv:
+    type: TextureCoordinate
+    coordinate_index: 0
+    u_tiling: 2.0
+    v_tiling: 2.0
+    node_pos_x: -600
+    node_pos_y: 0
+
+  base_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_BaseColor
+    node_pos_x: -300
+    node_pos_y: 0
+
+connections:
+  - tiled_uv -> base_tex.UVs
+
+outputs:
+  BaseColor: base_tex.RGB
+```
+
+### Static Switch Parameter (`examples/materials/static_switch_example.yaml`)
+
+Uses `StaticSwitchParameter` so artists can toggle detail normals on/off
+per material instance at compile time.
+
+```yaml
+nodes:
+  use_detail:
+    type: StaticSwitchParameter
+    parameter_name: UseDetailTexture
+    default_value: false
+    group: DetailMapping
+    node_pos_x: -200
+    node_pos_y: 0
+```
+
+### Material Function Call (`examples/materials/material_function_example.yaml`)
+
+Calls a reusable `MaterialFunction` from the Content Browser.
+
+```yaml
+nodes:
+  blend_func:
+    type: FunctionCall
+    material_function: /Game/MaterialFunctions/MF_BlendOverlay
+    node_pos_x: -200
+    node_pos_y: 0
+```
+
+### Parameter Metadata (`examples/materials/parameter_metadata_example.yaml`)
+
+Demonstrates parameter groups, slider ranges and sort priority for
+`ScalarParameter` and `VectorParameter`.
+
+```yaml
+nodes:
+  roughness_param:
+    type: ScalarParameter
+    parameter_name: Roughness
+    default_value: 0.5
+    group: SurfaceProperties
+    sort_priority: 0
+    slider_min: 0.0
+    slider_max: 1.0
+    node_pos_x: -400
+    node_pos_y: 0
+```
+
 ---
 
 ## Future Extensions
 
 See [`docs/GRAPH_GENERATOR_ARCHITECTURE.md`](docs/GRAPH_GENERATOR_ARCHITECTURE.md#future-extensions)
-for a full list of planned features, including Material Functions, Static
-Switches, Component Masks, Texture Coordinates, Blueprint graphs, and Niagara
+for a full list of planned features, including Blueprint graphs and Niagara
 graphs.

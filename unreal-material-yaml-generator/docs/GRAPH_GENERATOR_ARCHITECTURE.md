@@ -62,15 +62,19 @@ outputs:
 
 #### Supported Node Types
 
-| YAML type          | Unreal expression class                     |
-|--------------------|---------------------------------------------|
-| `TextureSample`    | `MaterialExpressionTextureSample`           |
-| `Multiply`         | `MaterialExpressionMultiply`                |
-| `Add`              | `MaterialExpressionAdd`                     |
-| `Constant`         | `MaterialExpressionConstant`                |
-| `Constant3Vector`  | `MaterialExpressionConstant3Vector`         |
-| `ScalarParameter`  | `MaterialExpressionScalarParameter`         |
-| `VectorParameter`  | `MaterialExpressionVectorParameter`         |
+| YAML type                | Unreal expression class                             |
+|--------------------------|-----------------------------------------------------|
+| `TextureSample`          | `MaterialExpressionTextureSample`                   |
+| `Multiply`               | `MaterialExpressionMultiply`                        |
+| `Add`                    | `MaterialExpressionAdd`                             |
+| `Constant`               | `MaterialExpressionConstant`                        |
+| `Constant3Vector`        | `MaterialExpressionConstant3Vector`                 |
+| `ScalarParameter`        | `MaterialExpressionScalarParameter`                 |
+| `VectorParameter`        | `MaterialExpressionVectorParameter`                 |
+| `FunctionCall`           | `MaterialExpressionMaterialFunctionCall`            |
+| `StaticSwitchParameter`  | `MaterialExpressionStaticSwitchParameter`           |
+| `ComponentMask`          | `MaterialExpressionComponentMask`                   |
+| `TextureCoordinate`      | `MaterialExpressionTextureCoordinate`               |
 
 #### Supported Material Output Properties
 
@@ -206,14 +210,6 @@ in `OUTPUT_PROPERTY_MAP` inside the backend module.
 
 The following extensions are planned but not yet implemented:
 
-- **Material Functions** – `MaterialExpressionMaterialFunctionCall` for
-  reusable sub-graphs.
-- **Static Switches** – `MaterialExpressionStaticSwitchParameter` for
-  compile-time branching.
-- **Component Masks** – `MaterialExpressionComponentMask` for selecting
-  individual channels (R, G, B, A).
-- **Texture Coordinate Nodes** – `MaterialExpressionTextureCoordinate` for
-  UV manipulation.
 - **Blueprint Graph Support** – Extend the pipeline to generate Blueprint
   event graphs from YAML.
 - **Niagara Graph Support** – Extend the pipeline to generate Niagara
