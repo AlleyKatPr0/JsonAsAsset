@@ -2,13 +2,13 @@
 unreal_material_backend.py
 
 Translates a :class:`~graph_model.GraphAsset` into a live Unreal Engine
-``Material`` asset using the Unreal Python API.
+``Material`` or ``MaterialInstanceConstant`` asset using the Unreal Python API.
 
 This module must be executed inside Unreal Engine (i.e. via the Unreal
 Python interpreter or the Unreal Editor console).
 
-Pipeline
---------
+Pipeline (Material)
+-------------------
 1. Create the ``Material`` asset via ``AssetToolsHelpers`` + ``MaterialFactoryNew``.
 2. Iterate over graph nodes and call
    ``MaterialEditingLibrary.create_material_expression`` for each one.
@@ -16,6 +16,14 @@ Pipeline
 4. Wire connections using ``MaterialEditingLibrary.connect_material_expressions``.
 5. Bind output nodes using ``MaterialEditingLibrary.connect_material_property``.
 6. Recompile and save the material.
+
+Pipeline (MaterialInstance)
+---------------------------
+1. Create the ``MaterialInstanceConstant`` via
+   ``MaterialInstanceConstantFactoryNew``.
+2. Set the parent material.
+3. Apply scalar / vector / texture parameter overrides.
+4. Save the asset.
 """
 
 from __future__ import annotations
@@ -29,38 +37,46 @@ from typing import Any
 import unreal  # type: ignore[import]
 
 from graph_model import GraphAsset, GraphConnection, GraphNode, GraphOutput
+from node_discovery import discover_material_nodes, get_expression_class
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Mapping: YAML node type  →  Unreal expression class name
+# Node-type map: built dynamically from the Unreal module at import time.
+# A static fallback is provided for the original supported types so that
+# this module still works even if discover_material_nodes() encounters an
+# unexpected environment.
 # ---------------------------------------------------------------------------
-# Each value is the string passed to unreal.load_class / used to look up the
-# expression class under the ``unreal`` module.
-NODE_TYPE_MAP: dict[str, str] = {
-    "TextureSample":          "MaterialExpressionTextureSample",
-    "Multiply":               "MaterialExpressionMultiply",
-    "Add":                    "MaterialExpressionAdd",
-    "Constant":               "MaterialExpressionConstant",
-    "Constant3Vector":        "MaterialExpressionConstant3Vector",
-    "ScalarParameter":        "MaterialExpressionScalarParameter",
-    "VectorParameter":        "MaterialExpressionVectorParameter",
-    "FunctionCall":           "MaterialExpressionMaterialFunctionCall",
-    "StaticSwitchParameter":  "MaterialExpressionStaticSwitchParameter",
-    "ComponentMask":          "MaterialExpressionComponentMask",
-    "TextureCoordinate":      "MaterialExpressionTextureCoordinate",
+_STATIC_FALLBACK: dict[str, Any] = {
+    "TextureSample":          unreal.MaterialExpressionTextureSample,
+    "Multiply":               unreal.MaterialExpressionMultiply,
+    "Add":                    unreal.MaterialExpressionAdd,
+    "Constant":               unreal.MaterialExpressionConstant,
+    "Constant3Vector":        unreal.MaterialExpressionConstant3Vector,
+    "ScalarParameter":        unreal.MaterialExpressionScalarParameter,
+    "VectorParameter":        unreal.MaterialExpressionVectorParameter,
+    "FunctionCall":           unreal.MaterialExpressionMaterialFunctionCall,
+    "StaticSwitchParameter":  unreal.MaterialExpressionStaticSwitchParameter,
+    "ComponentMask":          unreal.MaterialExpressionComponentMask,
+    "TextureCoordinate":      unreal.MaterialExpressionTextureCoordinate,
 }
+
+NODE_TYPE_MAP: dict[str, Any] = discover_material_nodes(fallback=_STATIC_FALLBACK)
 
 # ---------------------------------------------------------------------------
 # Mapping: output property name  →  unreal.MaterialProperty enum value
+# Extended to include UE5.7 Substrate outputs.
 # ---------------------------------------------------------------------------
-OUTPUT_PROPERTY_MAP: dict[str, unreal.MaterialProperty] = {
-    "BaseColor": unreal.MaterialProperty.MP_BASE_COLOR,
-    "Normal":    unreal.MaterialProperty.MP_NORMAL,
-    "Roughness": unreal.MaterialProperty.MP_ROUGHNESS,
-    "Metallic":  unreal.MaterialProperty.MP_METALLIC,
-    "Emissive":  unreal.MaterialProperty.MP_EMISSIVE_COLOR,
-    "Opacity":   unreal.MaterialProperty.MP_OPACITY,
+OUTPUT_PROPERTY_MAP: dict[str, Any] = {
+    "BaseColor":     unreal.MaterialProperty.MP_BASE_COLOR,
+    "Normal":        unreal.MaterialProperty.MP_NORMAL,
+    "Roughness":     unreal.MaterialProperty.MP_ROUGHNESS,
+    "Metallic":      unreal.MaterialProperty.MP_METALLIC,
+    "Emissive":      unreal.MaterialProperty.MP_EMISSIVE_COLOR,
+    "Opacity":       unreal.MaterialProperty.MP_OPACITY,
+    # Substrate outputs (UE5.7+)
+    "FrontMaterial": unreal.MaterialProperty.MP_FRONT_MATERIAL,
+    "BackMaterial":  unreal.MaterialProperty.MP_BACK_MATERIAL,
 }
 
 
@@ -84,30 +100,19 @@ def _split_pin_ref(ref: str) -> tuple[str, str]:
 def _get_expression_class(node_type: str) -> Any:
     """Return the Unreal expression class for *node_type*.
 
-    Parameters
-    ----------
-    node_type:
-        The ``type`` field from the YAML node definition.
+    Delegates to :func:`node_discovery.get_expression_class` using the
+    dynamically discovered :data:`NODE_TYPE_MAP`.
 
     Raises
     ------
     ValueError
-        If *node_type* is not present in :data:`NODE_TYPE_MAP`.
-    AttributeError
-        If the mapped class name does not exist in the ``unreal`` module.
+        If *node_type* is not found in the dynamic node map.
     """
-    if node_type not in NODE_TYPE_MAP:
-        supported = ", ".join(sorted(NODE_TYPE_MAP.keys()))
-        raise ValueError(
-            f"Unknown node type '{node_type}'. "
-            f"Supported types are: {supported}"
-        )
-    class_name = NODE_TYPE_MAP[node_type]
-    return getattr(unreal, class_name)
+    return get_expression_class(node_type, NODE_TYPE_MAP)
 
 
 # ---------------------------------------------------------------------------
-# Asset creation
+# Material asset creation
 # ---------------------------------------------------------------------------
 
 def _create_material_asset(
@@ -145,6 +150,123 @@ def _create_material_asset(
         )
     logger.info("Created material asset: %s/%s", asset_path, asset_name)
     return material
+
+
+# ---------------------------------------------------------------------------
+# Material Instance asset creation
+# ---------------------------------------------------------------------------
+
+def _create_material_instance_asset(
+    asset_name: str,
+    asset_path: str,
+    parent_path: str,
+    parameters: dict[str, Any],
+) -> unreal.MaterialInstanceConstant:
+    """Create and return a new ``MaterialInstanceConstant`` asset.
+
+    Parameters
+    ----------
+    asset_name:
+        The asset name (e.g. ``MI_Metal``).
+    asset_path:
+        Content-browser directory (e.g. ``/Game/Generated``).
+    parent_path:
+        Content-browser path to the parent material
+        (e.g. ``/Game/Materials/M_Master``).
+    parameters:
+        Mapping of parameter names to override values.  Scalar values are
+        treated as floats, lists/tuples as vector (linear colour) values,
+        and strings as texture paths.
+
+    Returns
+    -------
+    unreal.MaterialInstanceConstant
+        The newly created material instance.
+    """
+    asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+    factory = unreal.MaterialInstanceConstantFactoryNew()
+    instance = asset_tools.create_asset(
+        asset_name=asset_name,
+        package_path=asset_path,
+        asset_class=unreal.MaterialInstanceConstant,
+        factory=factory,
+    )
+    if instance is None:
+        raise RuntimeError(
+            f"Failed to create material instance '{asset_name}' at '{asset_path}'."
+        )
+
+    # Set parent material.
+    if parent_path:
+        parent_mat = unreal.load_asset(parent_path)
+        if parent_mat is None:
+            logger.warning(
+                "Parent material not found at '%s'. Instance has no parent.",
+                parent_path,
+            )
+        else:
+            instance.set_editor_property("parent", parent_mat)
+            logger.info(
+                "Set parent material '%s' on '%s'.", parent_path, asset_name
+            )
+
+    # Apply parameter overrides.
+    for param_name, param_value in parameters.items():
+        _apply_instance_parameter(instance, param_name, param_value)
+
+    logger.info("Created material instance: %s/%s", asset_path, asset_name)
+    return instance
+
+
+def _apply_instance_parameter(
+    instance: unreal.MaterialInstanceConstant,
+    param_name: str,
+    param_value: Any,
+) -> None:
+    """Apply a single parameter override to *instance*."""
+    mel = unreal.MaterialEditingLibrary
+
+    if isinstance(param_value, (list, tuple)):
+        # Vector parameter.
+        vec = param_value
+        color = unreal.LinearColor(
+            r=float(vec[0]) if len(vec) > 0 else 0.0,
+            g=float(vec[1]) if len(vec) > 1 else 0.0,
+            b=float(vec[2]) if len(vec) > 2 else 0.0,
+            a=float(vec[3]) if len(vec) > 3 else 1.0,
+        )
+        mel.set_material_instance_vector_parameter_value(
+            instance, param_name, color
+        )
+        logger.debug(
+            "  Set vector parameter '%s' = %s on '%s'.",
+            param_name, vec, instance.get_name(),
+        )
+    elif isinstance(param_value, str):
+        # Texture parameter.
+        texture_obj = unreal.load_asset(param_value)
+        if texture_obj is None:
+            logger.warning(
+                "  Texture not found at '%s' for parameter '%s'.",
+                param_value, param_name,
+            )
+        else:
+            mel.set_material_instance_texture_parameter_value(
+                instance, param_name, texture_obj
+            )
+            logger.debug(
+                "  Set texture parameter '%s' on '%s'.",
+                param_name, instance.get_name(),
+            )
+    else:
+        # Scalar parameter.
+        mel.set_material_instance_scalar_parameter_value(
+            instance, param_name, float(param_value)
+        )
+        logger.debug(
+            "  Set scalar parameter '%s' = %s on '%s'.",
+            param_name, param_value, instance.get_name(),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -456,10 +578,11 @@ def _bind_outputs(
 # Public entry point
 # ---------------------------------------------------------------------------
 
-def build_from_graph(graph: GraphAsset) -> unreal.Material:
-    """Create a complete Unreal material from an intermediate graph model.
+def build_from_graph(graph: GraphAsset) -> Any:
+    """Create a complete Unreal asset from an intermediate graph model.
 
-    This is the main entry point called by :mod:`material_builder`.
+    Dispatches to either :func:`_build_material` or
+    :func:`_build_material_instance` based on ``graph.class_name``.
 
     Parameters
     ----------
@@ -468,9 +591,28 @@ def build_from_graph(graph: GraphAsset) -> unreal.Material:
 
     Returns
     -------
-    unreal.Material
-        The compiled and saved material asset.
+    unreal.Material or unreal.MaterialInstanceConstant
+        The compiled and saved Unreal asset.
+
+    Raises
+    ------
+    ValueError
+        If ``graph.class_name`` is not ``"Material"`` or
+        ``"MaterialInstance"``.
     """
+    if graph.class_name == "MaterialInstance":
+        return _build_material_instance(graph)
+    elif graph.class_name == "Material":
+        return _build_material(graph)
+    else:
+        raise ValueError(
+            f"Unsupported asset class '{graph.class_name}'. "
+            "Expected 'Material' or 'MaterialInstance'."
+        )
+
+
+def _build_material(graph: GraphAsset) -> unreal.Material:
+    """Internal: build a ``Material`` asset from *graph*."""
     logger.info("Building material '%s' at '%s'.", graph.asset_name, graph.asset_path)
 
     # 1. Create the Material asset.
@@ -494,3 +636,27 @@ def build_from_graph(graph: GraphAsset) -> unreal.Material:
     logger.info("Saved material '%s'.", graph.asset_name)
 
     return material
+
+
+def _build_material_instance(
+    graph: GraphAsset,
+) -> unreal.MaterialInstanceConstant:
+    """Internal: build a ``MaterialInstanceConstant`` asset from *graph*."""
+    logger.info(
+        "Building material instance '%s' at '%s'.",
+        graph.asset_name,
+        graph.asset_path,
+    )
+
+    instance = _create_material_instance_asset(
+        asset_name=graph.asset_name,
+        asset_path=graph.asset_path,
+        parent_path=graph.parent,
+        parameters=graph.parameters,
+    )
+
+    # Save the asset to disk.
+    unreal.EditorAssetLibrary.save_loaded_asset(instance)
+    logger.info("Saved material instance '%s'.", graph.asset_name)
+
+    return instance

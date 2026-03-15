@@ -66,13 +66,18 @@ class GraphAsset:
     """Top-level container for an entire material graph.
 
     Attributes:
-        class_name: The Unreal asset class (always ``Material`` for now).
+        class_name: The Unreal asset class (e.g. ``Material`` or
+                    ``MaterialInstance``).
         asset_name: The name of the asset to create (e.g. ``M_Example``).
         asset_path: Content-browser path under which the asset is saved
                     (e.g. ``/Game/Generated``).
         nodes: Ordered mapping from node name to :class:`GraphNode`.
         connections: List of :class:`GraphConnection` objects.
         outputs: List of :class:`GraphOutput` bindings.
+        parent: For ``MaterialInstance`` assets, the content-browser path to
+                the parent material (e.g. ``/Game/Materials/M_Master``).
+        parameters: For ``MaterialInstance`` assets, a mapping of parameter
+                    name to override value.
     """
 
     class_name: str
@@ -81,3 +86,5 @@ class GraphAsset:
     nodes: dict[str, GraphNode] = field(default_factory=dict)
     connections: list[GraphConnection] = field(default_factory=list)
     outputs: list[GraphOutput] = field(default_factory=list)
+    parent: str = ""
+    parameters: dict[str, Any] = field(default_factory=dict)
