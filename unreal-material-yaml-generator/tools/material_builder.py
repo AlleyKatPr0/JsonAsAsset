@@ -12,6 +12,10 @@ Usage inside Unreal Engine Python console
 >>> sys.path.append("path/to/unreal-material-yaml-generator/tools")
 >>> import material_builder
 >>> material_builder.build_material("path/to/material.yaml")
+
+Batch building
+--------------
+>>> material_builder.build_directory("path/to/materials/")
 """
 
 from __future__ import annotations
@@ -88,11 +92,79 @@ def build_material(yaml_path: str) -> None:
     logger.info("=== Material build complete: %s/%s ===", graph.asset_path, graph.asset_name)
 
 
+def build_directory(directory_path: str) -> dict[str, str]:
+    """Build all ``*.yaml`` material files found in *directory_path*.
+
+    Recursively scans *directory_path* for ``.yaml`` files and calls
+    :func:`build_material` on each one.  Failures are collected and reported
+    after all files have been attempted rather than aborting on the first error.
+
+    Parameters
+    ----------
+    directory_path:
+        Absolute or relative path to the directory to scan.
+
+    Returns
+    -------
+    dict[str, str]
+        Mapping of YAML file path to either ``"ok"`` or a failure message.
+
+    Examples
+    --------
+    Run from the Unreal Python console::
+
+        import material_builder
+        results = material_builder.build_directory("/path/to/materials")
+        for path, status in results.items():
+            print(path, "->", status)
+    """
+    root = Path(directory_path)
+    if not root.is_dir():
+        raise NotADirectoryError(
+            f"build_directory: '{root}' is not a valid directory."
+        )
+
+    yaml_files = sorted(root.rglob("*.yaml"))
+    if not yaml_files:
+        logger.warning("build_directory: no *.yaml files found in '%s'.", root)
+        return {}
+
+    logger.info(
+        "=== Starting batch build of %d files in '%s' ===",
+        len(yaml_files),
+        root,
+    )
+
+    results: dict[str, str] = {}
+    for yaml_path in yaml_files:
+        try:
+            build_material(str(yaml_path))
+            results[str(yaml_path)] = "ok"
+            logger.info("Built: %s", yaml_path.stem)
+        except Exception as exc:  # noqa: BLE001
+            msg = f"{type(exc).__name__}: {exc}"
+            results[str(yaml_path)] = msg
+            logger.error("FAILED: %s – %s", yaml_path, msg)
+
+    successes = sum(1 for v in results.values() if v == "ok")
+    failures = len(results) - successes
+    logger.info(
+        "=== Batch build complete: %d succeeded, %d failed ===",
+        successes,
+        failures,
+    )
+    return results
+
+
 # ---------------------------------------------------------------------------
 # Allow the module to be run directly for quick testing outside Unreal.
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     if len(sys.argv) < 2:
-        print("Usage: python material_builder.py <path_to_yaml>")
+        print("Usage: python material_builder.py <path_to_yaml_or_directory>")
         sys.exit(1)
-    build_material(sys.argv[1])
+    target = Path(sys.argv[1])
+    if target.is_dir():
+        build_directory(str(target))
+    else:
+        build_material(str(target))

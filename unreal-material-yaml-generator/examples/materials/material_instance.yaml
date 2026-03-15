@@ -1,0 +1,15 @@
+# material_instance.yaml
+#
+# Demonstrates MaterialInstanceConstant generation.
+# The parent master material must exist at the given path before building.
+
+asset:
+  class: MaterialInstance
+  name: MI_Metal
+  path: /Game/Generated
+  parent: /Game/Materials/M_Master
+
+parameters:
+  Roughness: 0.2
+  Metallic: 1.0
+  TintColor: [1.0, 0.8, 0.6, 1.0]

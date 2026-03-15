@@ -1,0 +1,48 @@
+# substrate_material.yaml
+#
+# Demonstrates UE5.7 Substrate layered material with a clear-coat over a base.
+#
+# Requires Unreal Engine 5.7+ with Substrate enabled in project settings.
+
+asset:
+  class: Material
+  name: M_SubstrateLayered
+  path: /Game/Generated
+
+nodes:
+  # Base layer – diffuse substrate slab
+  base_slab:
+    type: SubstrateSlab
+
+  # Clear-coat layer – second slab acting as a thin dielectric coat
+  coat_slab:
+    type: SubstrateSlab
+
+  # Roughness scalar for the base layer
+  base_roughness:
+    type: Constant
+    value: 0.7
+
+  # Roughness scalar for the coat layer
+  coat_roughness:
+    type: Constant
+    value: 0.05
+
+  # Mix the two slabs with a blend weight
+  layered:
+    type: SubstrateMix
+
+  # Blend weight: 0 = only base, 1 = only coat
+  blend_weight:
+    type: Constant
+    value: 0.3
+
+connections:
+  - base_roughness -> base_slab.Roughness
+  - coat_roughness -> coat_slab.Roughness
+  - base_slab -> layered.Background
+  - coat_slab -> layered.Foreground
+  - blend_weight -> layered.Mix
+
+outputs:
+  FrontMaterial: layered

@@ -11,9 +11,10 @@ The parser is intentionally kept separate from both the YAML I/O layer
 Supported YAML schema
 ---------------------
 asset:
-  class: Material
+  class: Material              # or MaterialInstance
   name: M_Example
   path: /Game/Generated
+  parent: /Game/Materials/M_Master   # MaterialInstance only
 
 nodes:
   <node_name>:
@@ -26,6 +27,9 @@ connections:          # optional
 
 outputs:
   <MaterialProperty>: <node>[.<pin>]
+
+parameters:           # MaterialInstance only
+  <ParameterName>: <value>
 """
 
 from __future__ import annotations
@@ -113,6 +117,8 @@ def parse_yaml(source: Union[str, Path]) -> GraphAsset:
     class_name: str = asset_data["class"]
     asset_name: str = asset_data["name"]
     asset_path: str = asset_data["path"]
+    parent: str = asset_data.get("parent", "")
+    parameters: dict = dict(data.get("parameters", {}))
 
     # -- nodes section -------------------------------------------------------
     nodes: dict[str, GraphNode] = {}
@@ -175,4 +181,6 @@ def parse_yaml(source: Union[str, Path]) -> GraphAsset:
         nodes=nodes,
         connections=connections,
         outputs=outputs,
+        parent=parent,
+        parameters=parameters,
     )
