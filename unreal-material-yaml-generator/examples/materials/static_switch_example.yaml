@@ -1,0 +1,43 @@
+asset:
+  class: Material
+  name: M_StaticSwitchExample
+  path: /Game/Generated
+
+# This example shows StaticSwitchParameter for compile-time branching.
+# When UseDetailTexture is true, the detail normal map is used; otherwise
+# the base normal map is passed through.
+nodes:
+  base_normal:
+    type: TextureSample
+    texture: /Game/Textures/T_Normal
+    node_pos_x: -600
+    node_pos_y: -150
+
+  detail_normal:
+    type: TextureSample
+    texture: /Game/Textures/T_DetailNormal
+    node_pos_x: -600
+    node_pos_y: 150
+
+  # Static switch – default is off; artists can override per instance.
+  use_detail:
+    type: StaticSwitchParameter
+    parameter_name: UseDetailTexture
+    default_value: false
+    group: DetailMapping
+    node_pos_x: -200
+    node_pos_y: 0
+
+  base_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_BaseColor
+    node_pos_x: -400
+    node_pos_y: -400
+
+connections:
+  - base_normal.RGB  -> use_detail.False
+  - detail_normal.RGB -> use_detail.True
+
+outputs:
+  BaseColor: base_tex.RGB
+  Normal:    use_detail

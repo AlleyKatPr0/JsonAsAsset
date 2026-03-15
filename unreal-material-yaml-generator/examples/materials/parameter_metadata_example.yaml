@@ -1,0 +1,63 @@
+asset:
+  class: Material
+  name: M_ParameterMetadataExample
+  path: /Game/Generated
+
+# This example shows the full parameter metadata features available for
+# ScalarParameter and VectorParameter:
+#   - parameter_name  : name visible in material instances
+#   - default_value   : value used when no instance override is set
+#   - group           : groups related parameters in the instance editor
+#   - sort_priority   : order within the group (lower = higher up)
+#   - slider_min/max  : editor slider range hint (ScalarParameter only)
+nodes:
+  roughness_param:
+    type: ScalarParameter
+    parameter_name: Roughness
+    default_value: 0.5
+    group: SurfaceProperties
+    sort_priority: 0
+    slider_min: 0.0
+    slider_max: 1.0
+    node_pos_x: -400
+    node_pos_y: 0
+
+  metallic_param:
+    type: ScalarParameter
+    parameter_name: Metallic
+    default_value: 0.0
+    group: SurfaceProperties
+    sort_priority: 1
+    slider_min: 0.0
+    slider_max: 1.0
+    node_pos_x: -400
+    node_pos_y: 100
+
+  tint_param:
+    type: VectorParameter
+    parameter_name: TintColor
+    vector: [1.0, 1.0, 1.0, 1.0]
+    group: SurfaceProperties
+    sort_priority: 2
+    node_pos_x: -400
+    node_pos_y: 200
+
+  base_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_BaseColor
+    node_pos_x: -600
+    node_pos_y: 0
+
+  multiply_tint:
+    type: Multiply
+    node_pos_x: -100
+    node_pos_y: 0
+
+connections:
+  - base_tex.RGB  -> multiply_tint.A
+  - tint_param.RGB -> multiply_tint.B
+
+outputs:
+  BaseColor: multiply_tint
+  Roughness: roughness_param
+  Metallic:  metallic_param

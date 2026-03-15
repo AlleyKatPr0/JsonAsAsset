@@ -1,0 +1,36 @@
+asset:
+  class: Material
+  name: M_TextureCoordExample
+  path: /Game/Generated
+
+# This example shows how to use TextureCoordinate to tile a texture
+# independently of the mesh UVs and sample it with a specific UV set.
+nodes:
+  # Use UV channel 0 with 2× tiling in both axes.
+  tiled_uv:
+    type: TextureCoordinate
+    coordinate_index: 0
+    u_tiling: 2.0
+    v_tiling: 2.0
+    node_pos_x: -600
+    node_pos_y: 0
+
+  base_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_BaseColor
+    node_pos_x: -300
+    node_pos_y: 0
+
+  normal_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_Normal
+    node_pos_x: -300
+    node_pos_y: 200
+
+connections:
+  - tiled_uv -> base_tex.UVs
+  - tiled_uv -> normal_tex.UVs
+
+outputs:
+  BaseColor: base_tex.RGB
+  Normal:    normal_tex.RGB

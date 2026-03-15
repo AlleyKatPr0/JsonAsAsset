@@ -38,17 +38,17 @@ logger = logging.getLogger(__name__)
 # Each value is the string passed to unreal.load_class / used to look up the
 # expression class under the ``unreal`` module.
 NODE_TYPE_MAP: dict[str, str] = {
-    "TextureSample":     "MaterialExpressionTextureSample",
-    "Multiply":          "MaterialExpressionMultiply",
-    "Add":               "MaterialExpressionAdd",
-    "Constant":          "MaterialExpressionConstant",
-    "Constant3Vector":   "MaterialExpressionConstant3Vector",
-    "ScalarParameter":   "MaterialExpressionScalarParameter",
-    "VectorParameter":   "MaterialExpressionVectorParameter",
-    # TODO: Add MaterialExpressionMaterialFunctionCall for Material Functions
-    # TODO: Add MaterialExpressionStaticSwitchParameter for Static Switches
-    # TODO: Add MaterialExpressionComponentMask for Component Masks
-    # TODO: Add MaterialExpressionTextureCoordinate for Texture Coordinate Nodes
+    "TextureSample":          "MaterialExpressionTextureSample",
+    "Multiply":               "MaterialExpressionMultiply",
+    "Add":                    "MaterialExpressionAdd",
+    "Constant":               "MaterialExpressionConstant",
+    "Constant3Vector":        "MaterialExpressionConstant3Vector",
+    "ScalarParameter":        "MaterialExpressionScalarParameter",
+    "VectorParameter":        "MaterialExpressionVectorParameter",
+    "FunctionCall":           "MaterialExpressionMaterialFunctionCall",
+    "StaticSwitchParameter":  "MaterialExpressionStaticSwitchParameter",
+    "ComponentMask":          "MaterialExpressionComponentMask",
+    "TextureCoordinate":      "MaterialExpressionTextureCoordinate",
 }
 
 # ---------------------------------------------------------------------------
@@ -91,11 +91,17 @@ def _get_expression_class(node_type: str) -> Any:
 
     Raises
     ------
-    KeyError
+    ValueError
         If *node_type* is not present in :data:`NODE_TYPE_MAP`.
     AttributeError
         If the mapped class name does not exist in the ``unreal`` module.
     """
+    if node_type not in NODE_TYPE_MAP:
+        supported = ", ".join(sorted(NODE_TYPE_MAP.keys()))
+        raise ValueError(
+            f"Unknown node type '{node_type}'. "
+            f"Supported types are: {supported}"
+        )
     class_name = NODE_TYPE_MAP[node_type]
     return getattr(unreal, class_name)
 
@@ -168,12 +174,18 @@ def _create_nodes(
 
     for node_name, node in nodes.items():
         expr_class = _get_expression_class(node.type)
+
+        # Extract optional graph-layout coordinates; these are not forwarded
+        # to _apply_node_properties as they are not Unreal expression props.
+        pos_x = int(node.properties.get("node_pos_x", 0))
+        pos_y = int(node.properties.get("node_pos_y", 0))
+
         # create_material_expression places the node inside the material graph.
         expression = mel.create_material_expression(
             material,
             expr_class,
-            node_pos_x=0,
-            node_pos_y=0,
+            node_pos_x=pos_x,
+            node_pos_y=pos_y,
         )
         node_registry[node_name] = expression
         logger.debug("  Created expression %r -> %r", node_name, expr_class.__name__)
@@ -187,10 +199,48 @@ def _create_nodes(
 def _apply_node_properties(expression: Any, node: GraphNode) -> None:
     """Assign YAML properties onto an Unreal material expression.
 
-    Currently handled properties:
-    - ``texture`` – loads a :class:`unreal.Texture` object and assigns it.
-    - ``value``   – sets the ``r`` (float) or ``constant`` field.
-    - ``vector``  – sets the ``constant`` (linear color) field.
+    Handled properties:
+
+    General
+    ~~~~~~~
+    - ``node_pos_x`` / ``node_pos_y`` – graph layout coordinates; consumed by
+      :func:`_create_nodes` and intentionally ignored here.
+
+    TextureSample
+    ~~~~~~~~~~~~~
+    - ``texture`` – content-browser path to a :class:`unreal.Texture` asset.
+
+    FunctionCall
+    ~~~~~~~~~~~~
+    - ``material_function`` – content-browser path to a
+      :class:`unreal.MaterialFunction` asset.
+
+    Constant / ScalarParameter
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~
+    - ``value`` – single float assigned to the ``r`` (or ``constant``) field.
+
+    Constant3Vector / VectorParameter
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    - ``vector`` – ``[r, g, b]`` or ``[r, g, b, a]`` list.
+
+    ComponentMask
+    ~~~~~~~~~~~~~
+    - ``r`` / ``g`` / ``b`` / ``a`` – boolean channel selectors.
+
+    TextureCoordinate
+    ~~~~~~~~~~~~~~~~~
+    - ``coordinate_index`` – integer UV-set index (0-based).
+    - ``u_tiling`` / ``v_tiling`` – tiling scale factors.
+
+    ScalarParameter / VectorParameter (metadata)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    - ``parameter_name`` – name exposed on material instances.
+    - ``default_value``  – default float (ScalarParameter) or bool
+                           (StaticSwitchParameter).
+    - ``group``          – parameter group shown in the material instance editor.
+    - ``sort_priority``  – integer sort order within the group.
+    - ``slider_min``     – editor slider lower bound (ScalarParameter).
+    - ``slider_max``     – editor slider upper bound (ScalarParameter).
 
     Parameters
     ----------
@@ -200,6 +250,9 @@ def _apply_node_properties(expression: Any, node: GraphNode) -> None:
         The graph node containing property data.
     """
     props = node.properties
+
+    # Layout keys are handled by _create_nodes; skip them here.
+    _LAYOUT_KEYS = {"node_pos_x", "node_pos_y"}
 
     if "texture" in props:
         # Load the texture asset and assign it to the expression.
@@ -212,6 +265,19 @@ def _apply_node_properties(expression: Any, node: GraphNode) -> None:
         else:
             expression.set_editor_property("texture", texture_obj)
             logger.debug("  Set texture '%s' on '%s'.", texture_path, node.name)
+
+    if "material_function" in props:
+        # Load the MaterialFunction asset and assign it to the FunctionCall node.
+        func_path: str = props["material_function"]
+        func_obj = unreal.load_asset(func_path)
+        if func_obj is None:
+            logger.warning(
+                "  Material function not found at '%s' for node '%s'.",
+                func_path, node.name,
+            )
+        else:
+            expression.set_editor_property("material_function", func_obj)
+            logger.debug("  Set material_function '%s' on '%s'.", func_path, node.name)
 
     if "value" in props:
         # Constant node: single float value stored in the 'r' property.
@@ -236,12 +302,61 @@ def _apply_node_properties(expression: Any, node: GraphNode) -> None:
         logger.debug("  Set vector %s on '%s'.", vec, node.name)
 
     if "parameter_name" in props:
-        # Scalar/Vector parameter nodes need a unique parameter name.
+        # Scalar/Vector/StaticSwitch parameter nodes need a unique parameter name.
         expression.set_editor_property("parameter_name", props["parameter_name"])
 
     if "default_value" in props:
-        float_val = float(props["default_value"])
-        expression.set_editor_property("default_value", float_val)
+        raw = props["default_value"]
+        # StaticSwitchParameter expects a bool; Scalar parameters expect a float.
+        if isinstance(raw, bool):
+            expression.set_editor_property("default_value", raw)
+        else:
+            expression.set_editor_property("default_value", float(raw))
+
+    if "group" in props:
+        # Parameter group shown in the material instance editor.
+        expression.set_editor_property("group", props["group"])
+        logger.debug("  Set group '%s' on '%s'.", props["group"], node.name)
+
+    if "sort_priority" in props:
+        # Sort order within the parameter group.
+        expression.set_editor_property("sort_priority", int(props["sort_priority"]))
+        logger.debug(
+            "  Set sort_priority %d on '%s'.", int(props["sort_priority"]), node.name
+        )
+
+    if "slider_min" in props:
+        # Editor slider lower bound for ScalarParameter.
+        expression.set_editor_property("slider_min", float(props["slider_min"]))
+        logger.debug("  Set slider_min %s on '%s'.", props["slider_min"], node.name)
+
+    if "slider_max" in props:
+        # Editor slider upper bound for ScalarParameter.
+        expression.set_editor_property("slider_max", float(props["slider_max"]))
+        logger.debug("  Set slider_max %s on '%s'.", props["slider_max"], node.name)
+
+    # ComponentMask channel selectors (r, g, b, a as booleans).
+    for channel in ("r", "g", "b", "a"):
+        if channel in props and channel not in _LAYOUT_KEYS:
+            expression.set_editor_property(channel, bool(props[channel]))
+            logger.debug(
+                "  Set channel mask %s=%s on '%s'.", channel, props[channel], node.name
+            )
+
+    if "coordinate_index" in props:
+        # TextureCoordinate: which UV set to use (0-based).
+        expression.set_editor_property("coordinate_index", int(props["coordinate_index"]))
+        logger.debug(
+            "  Set coordinate_index %d on '%s'.", int(props["coordinate_index"]), node.name
+        )
+
+    if "u_tiling" in props:
+        expression.set_editor_property("u_tiling", float(props["u_tiling"]))
+        logger.debug("  Set u_tiling %s on '%s'.", props["u_tiling"], node.name)
+
+    if "v_tiling" in props:
+        expression.set_editor_property("v_tiling", float(props["v_tiling"]))
+        logger.debug("  Set v_tiling %s on '%s'.", props["v_tiling"], node.name)
 
 
 # ---------------------------------------------------------------------------

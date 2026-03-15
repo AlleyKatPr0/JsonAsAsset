@@ -1,0 +1,33 @@
+asset:
+  class: Material
+  name: M_FunctionCallExample
+  path: /Game/Generated
+
+# This example shows how to call a reusable MaterialFunction from a material.
+# The function is expected to exist in the Content Browser at the given path.
+nodes:
+  base_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_BaseColor
+    node_pos_x: -600
+    node_pos_y: -100
+
+  # Call a material function that blends two textures.
+  blend_func:
+    type: FunctionCall
+    material_function: /Game/MaterialFunctions/MF_BlendOverlay
+    node_pos_x: -200
+    node_pos_y: 0
+
+  roughness_tex:
+    type: TextureSample
+    texture: /Game/Textures/T_Roughness
+    node_pos_x: -600
+    node_pos_y: 100
+
+connections:
+  - base_tex.RGB     -> blend_func.A
+  - roughness_tex.RGB -> blend_func.B
+
+outputs:
+  BaseColor: blend_func
