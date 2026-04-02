@@ -23,7 +23,7 @@
 #include "UObject/UnrealTypePrivate.h"
 #endif
 
-bool GShowAnimationBlueprintImporterWarning = true;
+static bool GShowAnimationBlueprintImporterWarning = true;
 
 bool IAnimationBlueprintImporter::Import() {
 	if (GShowAnimationBlueprintImporterWarning) {
