@@ -2,8 +2,8 @@
 
 #include "Modules/Toolbar/Toolbar.h"
 
-#include "Utilities/Compatibility.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/Compatibility.h"
+#include "Engine/EngineUtilities.h"
 
 #include "Modules/UI/StyleModule.h"
 #include "Importers/Constructor/ImportReader.h"
@@ -16,22 +16,25 @@
 #include "Modules/Toolbar/Dropdowns/ParentDropdownBuilder.h"
 #include "Modules/Toolbar/Dropdowns/ToolsDropdownBuilder.h"
 #include "Modules/Toolbar/Dropdowns/VersioningDropdownBuilder.h"
+#include "Utilities/DialogUtilities.h"
 
-void FJsonAsAssetToolbar::Register() {
+static TWeakPtr<SNotificationItem> WaitingForCloud;
+
+void UJsonAsAssetToolbar::Register() {
 #if ENGINE_UE5
 	/* false: uses top toolbar. true: uses content browser toolbar */
-	static bool bUseToolbar = true;
+	static bool UseToolbar = false;
 	
 	UToolMenu* Menu;
 
-	if (bUseToolbar) {
+	if (UseToolbar) {
 		Menu = UToolMenus::Get()->ExtendMenu("LevelEditor.LevelEditorToolBar.PlayToolBar");
 	} else {
 		Menu = UToolMenus::Get()->ExtendMenu("ContentBrowser.Toolbar");
 	}
 
 	FToolMenuSection& Section =
-		bUseToolbar
+		UseToolbar
 		? Menu->FindOrAddSection(GJsonAsAssetName)
 		: Menu->FindOrAddSection("New");
 
@@ -41,7 +44,7 @@ void FJsonAsAssetToolbar::Register() {
 		
 		FToolUIActionChoice(
 			FUIAction(
-				FExecuteAction::CreateStatic(&ImportAction),
+				FExecuteAction::CreateUObject(this, &UJsonAsAssetToolbar::ImportAction),
 				FCanExecuteAction(),
 				FGetActionCheckState(),
 				FIsActionButtonVisible::CreateStatic(&IsToolBarVisible)
@@ -79,38 +82,31 @@ void FJsonAsAssetToolbar::Register() {
 #endif
 }
 
-void FJsonAsAssetToolbar::AddCloudButtons(FToolMenuSection& Section)
-{
+void UJsonAsAssetToolbar::AddCloudButtons(FToolMenuSection& Section) {
 #if ENGINE_UE5
 	/* Adds the Cloud button to the toolbar */
 	FToolMenuEntry& ActionButton = Section.AddEntry(FToolMenuEntry::InitToolBarButton(
 		"JsonAsAssetCloud",
-		
 		FToolUIActionChoice(
 			FUIAction(
 				FExecuteAction::CreateLambda([this] {
 					UJsonAsAssetSettings* Settings = GetSettings();
 					
-					Settings->bEnableCloudServer = !Settings->bEnableCloudServer;
+					Settings->EnableCloudServer = !Settings->EnableCloudServer;
+					SavePluginSettings(Settings);
 				}),
 				FCanExecuteAction(),
 				FGetActionCheckState(),
 				FIsActionButtonVisible::CreateStatic(&IsToolBarVisible)
 			)
 		),
-		
 		TAttribute<FText>::CreateLambda([this] {
 			const UJsonAsAssetSettings* Settings = GetSettings();
 			
-			return Settings->bEnableCloudServer
-				? FText::FromString("On")
-				: FText::FromString("Off");
+			return Settings->EnableCloudServer ? FText::FromString("On") : FText::FromString("Off");
 		}),
-		
 		FText::FromString(""),
-		
 		FSlateIcon(FJsonAsAssetStyle::Get().GetStyleSetName(), FName("Toolbar.Cloud")),
-		
 		EUserInterfaceActionType::Button
 	));
 	
@@ -122,7 +118,7 @@ void FJsonAsAssetToolbar::AddCloudButtons(FToolMenuSection& Section)
 		FUIAction(
 			FExecuteAction(),
 			FCanExecuteAction::CreateLambda([] {
-				return GetSettings()->bEnableCloudServer;
+				return GetSettings()->EnableCloudServer;
 			}),
 			FGetActionCheckState(),
 			FIsActionButtonVisible::CreateStatic(IsToolBarVisible)
@@ -137,10 +133,10 @@ void FJsonAsAssetToolbar::AddCloudButtons(FToolMenuSection& Section)
 }
 
 #if ENGINE_UE4
-void FJsonAsAssetToolbar::UE4Register(FToolBarBuilder& Builder) {
+void UJsonAsAssetToolbar::UE4Register(FToolBarBuilder& Builder) {
 	Builder.AddToolBarButton(
 		FUIAction(
-			FExecuteAction::CreateStatic(&ImportAction),
+			FExecuteAction::CreateUObject(this, &UJsonAsAssetToolbar::ImportAction),
 			FCanExecuteAction(),
 			FGetActionCheckState(),
 			FIsActionButtonVisible::CreateStatic(IsToolBarVisible)
@@ -158,55 +154,158 @@ void FJsonAsAssetToolbar::UE4Register(FToolBarBuilder& Builder) {
 			FGetActionCheckState(),
 			FIsActionButtonVisible::CreateStatic(IsToolBarVisible)
 		),
-		FOnGetContent::CreateStatic(&FJsonAsAssetToolbar::CreateMenuDropdown),
+		FOnGetContent::CreateStatic(&UJsonAsAssetToolbar::CreateMenuDropdown),
 		FText::FromString(FJMetadata::Version),
 		FText::FromString(""),
 		FSlateIcon(FJsonAsAssetStyle::Get().GetStyleSetName(), FName("Toolbar.Icon")),
 		true
 	);
+	
+	UE4CloudRegister(Builder);
 }
 
+void UJsonAsAssetToolbar::UE4CloudRegister(FToolBarBuilder& Builder) {
+	Builder.AddToolBarButton(
+		FUIAction(
+			FExecuteAction::CreateLambda([this] {
+				UJsonAsAssetSettings* Settings = GetSettings();
+						
+				Settings->EnableCloudServer = !Settings->EnableCloudServer;
+				SavePluginSettings(Settings);
+			}),
+			FCanExecuteAction(),
+			FGetActionCheckState(),
+			FIsActionButtonVisible::CreateStatic(&IsToolBarVisible)
+		),
+		NAME_None,
+		TAttribute<FText>::Create([this] {
+			const UJsonAsAssetSettings* Settings = GetSettings();
+			
+			return Settings->EnableCloudServer ? FText::FromString("On") : FText::FromString("Off");
+		}),
+		FText::FromString(""),
+		FSlateIcon(FJsonAsAssetStyle::Get().GetStyleSetName(), FName("Toolbar.Cloud"))
+	);
+
+	Builder.AddComboButton(
+		FUIAction(
+			FExecuteAction(),
+			FCanExecuteAction::CreateLambda([] {
+				return GetSettings()->EnableCloudServer;
+			}),
+			FGetActionCheckState(),
+			FIsActionButtonVisible::CreateStatic(IsToolBarVisible)
+		),
+		FOnGetContent::CreateStatic(&CreateCloudMenuDropdown),
+		FText::FromString(FJMetadata::Version),
+		FText::FromString(""),
+		FSlateIcon(FJsonAsAssetStyle::Get().GetStyleSetName(), FName("Toolbar.Cloud")),
+		true
+	);
+}
 #endif
 
-bool FJsonAsAssetToolbar::IsToolBarVisible() {
-	bool bVisible = true;
+bool UJsonAsAssetToolbar::IsToolBarVisible() {
+	if (!GJsonAsAssetRuntime.bEnableToolbarToggling) {
+		return true;
+	}
+	
+	bool Visible = true;
 
-	if (static const auto CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("Toolbar.Tools.FlippedVisibility"))) {
+	if (const auto CVar = IConsoleManager::Get().FindConsoleVariable(TEXT("Toolbar.Tools.FlippedVisibility"))) {
 		if (CVar->GetInt() == 1) {
-			bVisible = false;
+			Visible = false;
 		}
 	}
 
 	if (GEditor) {
-		const TIndirectArray<FWorldContext>& WorldContextList = GEditor->GetWorldContexts();
-
-		for (const FWorldContext& WorldContext : WorldContextList) {
+		for (const FWorldContext& WorldContext : GEditor->GetWorldContexts()) {
 			if (WorldContext.World() && WorldContext.World()->WorldType == EWorldType::PIE) {
-				bVisible = false;
+				Visible = false;
 			}
 		}
 	}
 
-	return bVisible;
+	return Visible;
 }
 
-bool FJsonAsAssetToolbar::IsFitToFunction() {
-	const UJsonAsAssetSettings* Settings = GetSettings();
+void UJsonAsAssetToolbar::WaitForCloudTimerCallback() {
+	if (WaitingForCloud.IsValid()) {
+		CloudDotCount = (CloudDotCount + 1) % 4;
 
-	/* Conditional Settings Checks */
-	if (Settings->bEnableCloudServer) {
-		if (!Cloud::Status::Check(Settings) || !Cloud::Update()) return false;
+		FString Dots;
+		for (int32 i = 0; i < CloudDotCount; ++i) {
+			Dots += TEXT(".");
+		}
+
+		WaitingForCloud.Pin()->SetText(
+			FText::FromString(FString::Printf(TEXT("Establishing Cloud%s"), *Dots))
+		);
+	}
+	
+	if (!GetSettings()->EnableCloudServer || !Cloud::Status::IsOpened()) {
+		CancelWaitForCloudTimer();
+		
+		return;
 	}
 
+	Cloud::Status::IsReady([this](const bool bReady) {
+		if (!bReady) {
+			return;
+		}
+
+		CancelWaitForCloudTimer();
+		ImportAction();
+	});
+}
+
+void UJsonAsAssetToolbar::CancelWaitForCloudTimer() {
+	RemoveNotification(WaitingForCloud);
+	GEditor->GetTimerManager()->ClearTimer(WaitForCloudTimer);
+}
+
+void UJsonAsAssetToolbar::IsFitToFunction(TFunction<void(bool)> OnResponse) {
+	const UJsonAsAssetSettings* Settings = GetSettings();
+
+	if (!Settings->EnableCloudServer) {
+		OnResponse(true);
+		
+		return;
+	}
+
+	Cloud::Status::Check(Settings,[this, OnResponse](const bool bStatusOk) {
+		if (!bStatusOk) {
+			OnResponse(false);
+			
+			return;
+		}
+
+		Cloud::Update([OnResponse](const bool bUpdated) {
+			OnResponse(bUpdated);
+		});
+	});
+}
+
+void UJsonAsAssetToolbar::ImportAction() {
+	if (WaitingForCloud.IsValid()) return;
+	
+	IsFitToFunction([this](const bool bAllowed) {
+		if (!bAllowed) {
+			HandleCloudWaiting();
+			
+			return;
+		}
+
+		Import();
+	});
+}
+
+void UJsonAsAssetToolbar::Import() {
 	/* Update Runtime */
 	GJsonAsAssetRuntime.Update();
 	FJRedirects::Clear();
 
-	return true;
-}
-
-void FJsonAsAssetToolbar::ImportAction() {
-	if (!IsFitToFunction()) return;
+	CancelWaitForCloudTimer();
 
 	/* Dialog for a JSON File */
 	TArray<FString> OutFileNames = OpenFileDialog("Select a JSON File", "JSON Files|*.json");
@@ -219,7 +318,27 @@ void FJsonAsAssetToolbar::ImportAction() {
 	}
 }
 
-TSharedRef<SWidget> FJsonAsAssetToolbar::CreateMenuDropdown() {
+void UJsonAsAssetToolbar::HandleCloudWaiting() {
+	if (!Cloud::Status::ShouldWaitUntilInitialized(GetSettings()) || WaitingForCloud.IsValid()) return;
+	
+	WaitingForCloud =
+		AppendNotificationWithHandler(
+			FText::FromString("Establishing Cloud"),
+			FText::FromString(""),
+			999.0f,
+			FJsonAsAssetStyle::Get().GetBrush("Toolbar.Icon"),
+			SNotificationItem::CS_Pending,
+			false,
+			0.0f);
+
+	GEditor->GetTimerManager()->SetTimer(
+		WaitForCloudTimer,
+		FTimerDelegate::CreateUObject(this, &UJsonAsAssetToolbar::WaitForCloudTimerCallback),
+		0.2f,
+		true);
+}
+
+TSharedRef<SWidget> UJsonAsAssetToolbar::CreateMenuDropdown() {
 	FMenuBuilder MenuBuilder(false, nullptr);
 
 	TArray<TSharedRef<IParentDropdownBuilder>> Dropdowns = {
@@ -237,7 +356,7 @@ TSharedRef<SWidget> FJsonAsAssetToolbar::CreateMenuDropdown() {
 	return MenuBuilder.MakeWidget();
 }
 
-TSharedRef<SWidget> FJsonAsAssetToolbar::CreateCloudMenuDropdown() {
+TSharedRef<SWidget> UJsonAsAssetToolbar::CreateCloudMenuDropdown() {
 	FMenuBuilder MenuBuilder(false, nullptr);
 
 	TArray<TSharedRef<IParentDropdownBuilder>> Dropdowns = {

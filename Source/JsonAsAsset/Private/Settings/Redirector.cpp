@@ -4,10 +4,9 @@
 
 #include "Settings/JsonAsAssetSettings.h"
 #include "Settings/Runtime.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
 
-/************************************
- **** Redirect History ************ */
+/********* Redirect History ************ */
 TMap<FString, TArray<FJRedirectorPoint>> FJRedirects::History;
 
 bool FJRedirector::IsEnabled() const {
@@ -20,7 +19,7 @@ bool FJRedirector::IsEnabled() const {
 	}
 
 	/* If there are specific profiles that go with this redirector, and the cloud is disabled, don't use any. */
-	if (!GetSettings()->bEnableCloudServer && Profiles.Num() > 0) {
+	if (!GetSettings()->EnableCloudServer && Profiles.Num() > 0) {
 		bIsEnabled = false;
 	}
 	
@@ -58,7 +57,7 @@ void FJRedirects::Reverse(FString& Path) {
 		return;
 	}
 
-	for (const FJRedirectorPoint Point : *Points) {
+	for (const FJRedirectorPoint& Point : *Points) {
 		Path = Path.Replace(*Point.To, *Point.From);
 	}
 }

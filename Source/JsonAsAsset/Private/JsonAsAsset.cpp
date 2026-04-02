@@ -1,6 +1,7 @@
 /* Copyright JsonAsAsset Contributors 2024-2026 */
 
 #include "JsonAsAsset.h"
+#include "Utilities/JsonUtilities.h"
 
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 #if ENGINE_UE4
@@ -8,11 +9,15 @@
 #include "LevelEditor.h"
 #endif
 
+#include "Http.h"
 #include "Modules/Versioning.h"
 
 #include "Modules/UI/StyleModule.h"
 #include "Modules/Toolbar/Toolbar.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
+
+#include "Logging/LogVerbosity.h"
+#include "Settings/Runtime.h"
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 #ifdef _MSC_VER
@@ -20,6 +25,8 @@
 #endif
 
 void FJsonAsAssetModule::StartupModule() {
+	LogHttp.SetVerbosity(ELogVerbosity::Error);
+
 	FJMetadata::Initialize();
 	
     /* Initialize plugin style, reload textures */
@@ -27,10 +34,11 @@ void FJsonAsAssetModule::StartupModule() {
     FJsonAsAssetStyle::ReloadTextures();
 
     /* Register Toolbar */
-#if ENGINE_UE5
-	FJsonAsAssetToolbar Toolbar;
+	Toolbar = NewObject<UJsonAsAssetToolbar>();
+	Toolbar->AddToRoot();
 	
-    UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateRaw(&Toolbar, &FJsonAsAssetToolbar::Register));
+#if ENGINE_UE5
+	UToolMenus::RegisterStartupCallback(FSimpleMulticastDelegate::FDelegate::CreateUObject(Toolbar, &UJsonAsAssetToolbar::Register));
 #else
 	{
     	const TSharedPtr<FUICommandList> PluginCommands = MakeShareable(new FUICommandList);
@@ -41,18 +49,20 @@ void FJsonAsAssetModule::StartupModule() {
 			"Settings",
 			EExtensionHook::After,
 			PluginCommands,
-			FToolBarExtensionDelegate::CreateStatic(&FJsonAsAssetToolbar::UE4Register)
+			FToolBarExtensionDelegate::CreateUObject(Toolbar, &UJsonAsAssetToolbar::UE4Register)
 		);
 
     	LevelEditorModule.GetToolBarExtensibilityManager()->AddExtender(ToolbarExtender);
 	}
 #endif
-
+	
     const UJsonAsAssetSettings* Settings = GetSettings();
 	
-	if (!Settings->Versioning.bDisable) {
+	if (!Settings->Versioning.Disable) {
 		GJsonAsAssetVersioning.Update();
 	}
+
+	GJsonAsAssetRuntime.Update();
 }
 
 void FJsonAsAssetModule::ShutdownModule() {
@@ -62,6 +72,11 @@ void FJsonAsAssetModule::ShutdownModule() {
 
 	/* Shutdown the plugin style */
 	FJsonAsAssetStyle::Shutdown();
+
+	if (Toolbar) {
+		Toolbar->RemoveFromRoot();
+		Toolbar = nullptr;
+	}
 }
 
 IMPLEMENT_MODULE(FJsonAsAssetModule, JsonAsAsset)

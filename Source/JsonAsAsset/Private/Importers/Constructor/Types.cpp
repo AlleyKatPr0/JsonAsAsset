@@ -3,7 +3,7 @@
 #include "Importers/Constructor/Types.h"
 
 #include "Settings/JsonAsAssetSettings.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
 
 /* Define supported template asset class here */
 TMap<FString, TArray<FString>> ImportTypes::Templated = {
@@ -20,7 +20,9 @@ TMap<FString, TArray<FString>> ImportTypes::Templated = {
 			TEXT("SlateBrushAsset"),
 			TEXT("SlateWidgetStyleAsset"),
 			TEXT("LandscapeLayerInfoObject"),
-			TEXT("HLODProxy")
+			TEXT("HLODProxy"),
+			TEXT("AnimBoneCompressionSettings"),
+			TEXT("AnimCurveCompressionSettings"),
 		}
 	},
 	{
@@ -50,6 +52,12 @@ TMap<FString, TArray<FString>> ImportTypes::Templated = {
 			TEXT("PhysicalMaterial"),
 		}
 	},
+{
+		TEXT("UI Assets"),
+		{
+			TEXT("Font"),
+		}
+	},
 	{
 		TEXT("Sound Assets"),
 		{
@@ -60,6 +68,8 @@ TMap<FString, TArray<FString>> ImportTypes::Templated = {
 			TEXT("SoundMix"),
 			TEXT("SoundModulationPatch"),
 			TEXT("SubmixEffectDynamicsProcessorPreset"),
+			TEXT("SoundSubmix"),
+			TEXT("AudioBus"),
 		}
 	},
 	{
@@ -94,7 +104,7 @@ bool ImportTypes::Allowed(const FString& ImporterType) {
 	if (Experimental.Contains(ImporterType)) {
 		const UJsonAsAssetSettings* Settings = GetSettings();
 
-		if (!Settings->bEnableExperiments) return false;
+		if (!Settings->EnableExperiments) return false;
 	}
 
 	return true;

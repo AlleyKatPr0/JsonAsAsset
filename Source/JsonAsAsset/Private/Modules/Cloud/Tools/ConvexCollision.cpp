@@ -3,9 +3,11 @@
 #include "Modules/Cloud/Tools/ConvexCollision.h"
 
 #include "Engine/StaticMeshSocket.h"
-#include "Utilities/EngineUtilities.h"
+#include "Modules/Cloud/Cloud.h"
+#include "Engine/EngineUtilities.h"
 
 #include "PhysicsEngine/BodySetup.h"
+#include "Utilities/JsonUtilities.h"
 
 void TToolConvexCollision::Execute() {
 	TArray<FAssetData> AssetDataList = GetAssetsInSelectedFolder();
@@ -16,7 +18,7 @@ void TToolConvexCollision::Execute() {
 
 	for (const FAssetData& AssetData : AssetDataList) {
 		if (!AssetData.IsValid()) continue;
-		if (AssetData.AssetClass != "StaticMesh") continue;
+		if (GetAssetDataClass(AssetData) != "StaticMesh") continue;
 		
 		UObject* Asset = AssetData.GetAsset();
 		if (Asset == nullptr) continue;
@@ -25,7 +27,7 @@ void TToolConvexCollision::Execute() {
 		if (StaticMesh == nullptr) continue;
 
 		/* Request to API ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-		FString ObjectPath = AssetData.ObjectPath.ToString();
+		FString ObjectPath = GetAssetObjectPath(AssetData);
 
 		const TSharedPtr<FJsonObject> Response = Cloud::Export::GetRaw(ObjectPath);
 		if (Response == nullptr || ObjectPath.IsEmpty()) continue;
@@ -64,13 +66,35 @@ void TToolConvexCollision::Execute() {
 				GetObjectSerializer()->SetExportForDeserialization(JsonObject, StaticMesh);
 				GetObjectSerializer()->Parent = StaticMesh;
 
-				GetObjectSerializer()->DeserializeExports(Exports);
+				FUObjectExportContainer Container(Exports);
+				GetObjectSerializer()->DeserializeExports(Container);
 
-				for (const FUObjectExport UObjectExport : GetObjectSerializer()->GetPropertySerializer()->ExportsContainer) {
-					if (UStaticMeshSocket* Socket = Cast<UStaticMeshSocket>(UObjectExport.Object)) {
-						StaticMesh->AddSocket(Socket);
+				if (GetObjectSerializer()->GetPropertySerializer()->ExportsContainer) {
+					for (const FUObjectExport& UObjectExport : *GetObjectSerializer()->GetPropertySerializer()->ExportsContainer) {
+						if (UStaticMeshSocket* Socket = Cast<UStaticMeshSocket>(UObjectExport.Object)) {
+							StaticMesh->AddSocket(Socket);
+						}
 					}
 				}
+
+#if ENGINE_UE5
+				if (Properties->HasField(TEXT("StaticMaterials"))) {
+					const TArray<TSharedPtr<FJsonValue>> StaticMaterials = Properties->GetArrayField(TEXT("StaticMaterials"));
+					
+					int MaterialIndex = 0;
+					for (FStaticMaterial& StaticMaterial : StaticMesh->GetStaticMaterials()) {
+						if (StaticMaterials.IsValidIndex(MaterialIndex))
+						{
+							const TSharedPtr<FJsonObject> StaticMaterialJsonObject = StaticMaterials[MaterialIndex]->AsObject();
+
+							StaticMaterial.MaterialSlotName = *StaticMaterialJsonObject->GetStringField(TEXT("MaterialSlotName"));
+							StaticMaterial.ImportedMaterialSlotName = *StaticMaterialJsonObject->GetStringField(TEXT("ImportedMaterialSlotName"));
+						}
+					
+						MaterialIndex++;
+					}	
+				}
+#endif
 				
 				GetObjectSerializer()->DeserializeObjectProperties(RemovePropertiesShared(Properties, {
 					"StaticMaterials",
@@ -98,7 +122,7 @@ void TToolConvexCollision::Execute() {
 
 			/* Notification */
 			AppendNotification(
-				FText::FromString("Imported Convex Collision: " + StaticMesh->GetName()),
+				FText::FromString("Imported SM Data: " + StaticMesh->GetName()),
 				FText::FromString(StaticMesh->GetName()),
 				3.5f,
 				FAppStyle::GetBrush("PhysicsAssetEditor.EnableCollision.Small"),

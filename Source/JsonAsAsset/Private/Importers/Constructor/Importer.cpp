@@ -12,7 +12,7 @@
 #include "Curves/CurveLinearColor.h"
 #include "Modules/Log.h"
 #include "Sound/SoundNode.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
 /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
 UObject* IImporter::CreateAsset(UObject* CreatedAsset) {
@@ -106,10 +106,10 @@ void IImporter::LoadExport(const TSharedPtr<FJsonObject>* PackageIndex, TObjectP
 
 	Object = LoadedObject;
 
-	if (!Object && GetObjectSerializer() != nullptr && GetPropertySerializer() != nullptr) {
-		const FUObjectExport Export = GetPropertySerializer()->ExportsContainer.Find(ObjectName);
+	if (!Object && GetObjectSerializer() != nullptr && GetPropertySerializer() != nullptr && GetPropertySerializer()->ExportsContainer != nullptr) {
+		const FUObjectExport& Export = GetPropertySerializer()->ExportsContainer->Find(ObjectName);
 		
-		if (Export.IsValid() && Export.Object != nullptr && Export.Object->IsA(T::StaticClass())) {
+		if (Export.IsJsonAndObjectValid() && Export.Object != nullptr && Export.Object->IsA(T::StaticClass())) {
 			Object = TObjectPtr<T>(Cast<T>(Export.Object));
 		}
 	}
@@ -146,7 +146,7 @@ void IImporter::Save() const {
 	}
 
 	/* User option to save packages on import */
-	if (Settings->AssetSettings.bSaveAssets) {
+	if (Settings->AssetSettings.SaveAssets) {
 		SavePackage(GetPackage());
 	}
 }
@@ -160,14 +160,6 @@ bool IImporter::OnAssetCreation(UObject* Asset) const {
 	return Synced;
 }
 
-void IImporter::DeserializeExports(UObject* Parent, const bool bCreateObjects) {
-	GetObjectSerializer()->SetExportForDeserialization(GetAssetExport(), Parent);
-	GetObjectSerializer()->Parent = Parent;
-    
-	GetObjectSerializer()->DeserializeExports(AssetContainer.JsonObjects, bCreateObjects);
-	ApplyModifications();
-}
-
-FUObjectExportContainer IImporter::GetExportContainer() const {
+FUObjectExportContainer* IImporter::GetExportContainer() const {
 	return GetObjectSerializer()->GetPropertySerializer()->ExportsContainer;
 }

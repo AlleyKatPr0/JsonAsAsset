@@ -8,11 +8,10 @@
 
 /* Settings for animation blueprints */
 USTRUCT()
-struct FJAnimationBlueprintSettings
-{
+struct FJAnimationBlueprintSettings {
 	GENERATED_BODY()
 public:
-	/* Saves Keys/IDs in Node's comment. */
-	UPROPERTY(EditAnywhere, Config, AdvancedDisplay, Category = AnimationBlueprint)
-	bool bSaveNodeKeysInComments = false;
+	/* Saves IDs in Node's comment. */
+	UPROPERTY(EditAnywhere, Config, AdvancedDisplay, Category = AnimationBlueprintSettings)
+	bool NodeIDComments = false;
 };

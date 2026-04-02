@@ -7,10 +7,11 @@
 #include "Misc/MessageDialog.h"
 #include "Modules/Cloud/Cloud.h"
 #include "Sound/SoundCue.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
+#include "Utilities/JsonUtilities.h"
 
 void ISoundGraph::ConstructNodes(USoundCue* SoundCue, TMap<FString, USoundNode*>& OutNodes) {
-	for (FUObjectExport Export : AssetContainer) {
+	for (FUObjectExport& Export : AssetContainer) {
 		FString Name = Export.GetName().ToString();
 		FString Type = Export.GetType().ToString();
 
@@ -23,25 +24,26 @@ void ISoundGraph::ConstructNodes(USoundCue* SoundCue, TMap<FString, USoundNode*>
 	}
 }
 
-USoundNode* ISoundGraph::CreateEmptyNode(FName Name, const FName Type, USoundCue* SoundCue) {
-	UClass* Class = FindClassByType(Type.ToString());
+USoundNode* ISoundGraph::CreateEmptyNode(const FName Name, const FName Type, USoundCue* SoundCue) {
+	const UClass* Class = FindClassByType(Type.ToString());
 
-	/* TODO: Construct the sound node manually to have the exact same object name */
-	return SoundCue->ConstructSoundNode<USoundNode>(
-		Class,
-		false
-	);
+	/* Set flag to be transactional so it registers with undo system */
+	USoundNode* SoundNode = NewObject<USoundNode>(SoundCue, Class, Name, RF_Transactional);
+	SoundCue->AllNodes.Add(SoundNode);
+	SoundCue->SetupSoundNode(SoundNode, false);
+	
+	return SoundNode;
 }
 
-void ISoundGraph::SetupNodes(USoundCue* SoundCueAsset, TMap<FString, USoundNode*> SoundCueNodes) const {
+void ISoundGraph::SetupNodes(const USoundCue* SoundCueAsset, TMap<FString, USoundNode*> SoundCueNodes) {
 	/* If Node is connected to Root Node */
 	if (AssetExport.GetProperties()->HasField(TEXT("FirstNode"))) {
-		auto FirstNodeProp = AssetExport.GetProperties()->TryGetField(TEXT("FirstNode"))->AsObject();
-		auto FirstNodeName = FirstNodeProp->TryGetField(TEXT("ObjectName"))->AsString();
+		const auto FirstNodeProp = AssetExport.GetProperties()->TryGetField(TEXT("FirstNode"))->AsObject();
+		const auto FirstNodeName = FirstNodeProp->TryGetField(TEXT("ObjectName"))->AsString();
 
-		int32 ColonIndex = FirstNodeName.Find(TEXT(":"));
-		int32 QuoteIndex = FirstNodeName.Find(TEXT("'"), ESearchCase::CaseSensitive, ESearchDir::FromEnd);
-		FString ChildNodeName = FirstNodeName.Mid(ColonIndex + 1, QuoteIndex - ColonIndex - 1);
+		const int32 ColonIndex = FirstNodeName.Find(TEXT(":"));
+		const int32 QuoteIndex = FirstNodeName.Find(TEXT("'"), ESearchCase::CaseSensitive, ESearchDir::FromEnd);
+		const FString ChildNodeName = FirstNodeName.Mid(ColonIndex + 1, QuoteIndex - ColonIndex - 1);
 
 		USoundNode** FirstNode = SoundCueNodes.Find(ChildNodeName);
 		UEdGraphNode* RootNode = SoundCueAsset->SoundCueGraph->Nodes[0];
@@ -53,18 +55,15 @@ void ISoundGraph::SetupNodes(USoundCue* SoundCueAsset, TMap<FString, USoundNode*
 	}
 
 	/* Connections done here */
-	for (FUObjectExport Export : AssetContainer) {
-		FString Name = Export.GetName().ToString();
-		FString Type = Export.GetType().ToString();
-
+	for (FUObjectExport& Export : AssetContainer) {
 		/* Make sure it has Properties and it's a SoundNode */
-		if (!Export.JsonObject->HasField(TEXT("Properties")) || !Type.StartsWith("SoundNode")) {
+		if (!Export.JsonObject->HasField(TEXT("Properties")) || !Export.GetType().ToString().StartsWith("SoundNode")) {
 			continue;
 		}
 
 		TSharedPtr<FJsonObject> NodeProperties = Export.GetProperties();
 
-		USoundNode** CurrentNode = SoundCueNodes.Find(Name);
+		USoundNode** CurrentNode = SoundCueNodes.Find(Export.GetName().ToString());
 		USoundNode* Node = *CurrentNode;
 		
 		/* Filter only node with ChildNodes and handle the pins */
@@ -75,7 +74,7 @@ void ISoundGraph::SetupNodes(USoundCue* SoundCueAsset, TMap<FString, USoundNode*
 			int32 ConnectionIndex = 0;
 
 			for (TSharedPtr<FJsonValue> CurrentNodeValue : CurrentNodeChildNodes) {
-				auto CurrentNodeChildNode = CurrentNodeValue->AsObject();
+				const auto CurrentNodeChildNode = CurrentNodeValue->AsObject();
 
 				/* Insert a child node if it doesn't exist */
 				if (!Node->ChildNodes.IsValidIndex(ConnectionIndex)) {
@@ -85,12 +84,12 @@ void ISoundGraph::SetupNodes(USoundCue* SoundCueAsset, TMap<FString, USoundNode*
 				if (CurrentNodeChildNode->HasField(TEXT("ObjectName"))) {
 					auto CurrentChildNodeObjectName = CurrentNodeChildNode->TryGetField(TEXT("ObjectName"))->AsString();
 
-					int32 ColonIndex = CurrentChildNodeObjectName.Find(TEXT(":"));
-					int32 QuoteIndex = CurrentChildNodeObjectName.Find(TEXT("'"), ESearchCase::CaseSensitive, ESearchDir::FromEnd);
+					const int32 ColonIndex = CurrentChildNodeObjectName.Find(TEXT(":"));
+					const int32 QuoteIndex = CurrentChildNodeObjectName.Find(TEXT("'"), ESearchCase::CaseSensitive, ESearchDir::FromEnd);
 					FString CurrentChildNodeName = CurrentChildNodeObjectName.Mid(ColonIndex + 1, QuoteIndex - ColonIndex - 1);
 
 					USoundNode** CurrentChildNode = SoundCueNodes.Find(CurrentChildNodeName);
-					int CurrentPin = ConnectionIndex + 1;
+					const int CurrentPin = ConnectionIndex + 1;
 
 					/* Connect it */
 					if (CurrentNode && CurrentChildNode) {
@@ -109,7 +108,7 @@ void ISoundGraph::SetupNodes(USoundCue* SoundCueAsset, TMap<FString, USoundNode*
 
 		/* Import Sound Wave */
 		if (Cast<USoundNodeWavePlayer>(Node) != nullptr) {
-			auto WavePlayerNode = Cast<USoundNodeWavePlayer>(Node);
+			const auto WavePlayerNode = Cast<USoundNodeWavePlayer>(Node);
 
 			if (NodeProperties->HasField(TEXT("SoundWaveAssetPtr"))) {
 				FString AssetPtr = NodeProperties->TryGetField(TEXT("SoundWaveAssetPtr"))->AsObject()->GetStringField(TEXT("AssetPathName"));
@@ -133,32 +132,40 @@ void ISoundGraph::SetupNodes(USoundCue* SoundCueAsset, TMap<FString, USoundNode*
 					
 					if (Response == nullptr) continue;
 					
-					OnDownloadSoundWave(Response->GetStringField("file"), AssetPtr, WavePlayerNode);
+					OnDownloadSoundWave(Response->GetStringField(TEXT("file")), AssetPtr, WavePlayerNode);
 				}
 			}
 		}
 	}
 }
 
-void ISoundGraph::ConnectEdGraphNode(UEdGraphNode* NodeToConnect, UEdGraphNode* NodeToConnectTo, int Pin = 1) {
+void ISoundGraph::ConnectEdGraphNode(UEdGraphNode* NodeToConnect, UEdGraphNode* NodeToConnectTo, const int Pin = 1) {
 	NodeToConnect->Pins[0]->MakeLinkTo(NodeToConnectTo->Pins[Pin]);
 }
 
-void ISoundGraph::ConnectSoundNode(const USoundNode* NodeToConnect, const USoundNode* NodeToConnectTo, int Pin = 1) {
+void ISoundGraph::ConnectSoundNode(const USoundNode* NodeToConnect, const USoundNode* NodeToConnectTo, const int Pin = 1) {
 	if (NodeToConnectTo->GetGraphNode()->Pins.IsValidIndex(Pin)) {
 		NodeToConnect->GetGraphNode()->Pins[0]->MakeLinkTo(NodeToConnectTo->GetGraphNode()->Pins[Pin]);
 	}
 }
 
-void ISoundGraph::OnDownloadSoundWave(FString SavePath, FString AssetPtr, USoundNodeWavePlayer* Node) {
+void ISoundGraph::OnDownloadSoundWave(const FString& SavePath, FString AssetPtr, USoundNodeWavePlayer* Node) {
 	if (!FPaths::FileExists(SavePath)) {
-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(FString::Format(TEXT("Failed To Find File {0} In Cache!"), { SavePath })));
+		AppendNotification(
+			FText::FromString("Failed: " + AssetPtr),
+			FText::FromString("Failed to download sound wave"),
+			8.0f,
+			SNotificationItem::ECompletionState::CS_Fail,
+			true,
+			456.0
+		);
 		return;
 	}
 
 	IAssetTools& AssetTools = FModuleManager::GetModuleChecked<FAssetToolsModule>("AssetTools").Get();
 	UAutomatedAssetImportData* ImportData = NewObject<UAutomatedAssetImportData>();
 	ImportData->Filenames.Add(SavePath);
+	
 	FJRedirects::Redirect(AssetPtr);
 	
 	ImportData->DestinationPath = FPaths::GetPath(AssetPtr);
@@ -175,10 +182,30 @@ void ISoundGraph::OnDownloadSoundWave(FString SavePath, FString AssetPtr, USound
 	USoundWave* ImportedWave = Cast<USoundWave>(AssetsImported[0]);
 
 	if (!ImportedWave) {
-		FMessageDialog::Open(EAppMsgType::Ok, FText::FromString(FString::Format(TEXT("Failed To Import Wave {0}!"), { AssetPtr })));
+		AppendNotification(
+			FText::FromString("Failed: " + AssetPtr),
+			FText::FromString("Failed to import sound wave"),
+			8.0f,
+			SNotificationItem::ECompletionState::CS_Fail,
+			true,
+			456.0
+		);
 		return;
 	}
 
 	ImportedWave->AssetImportData = nullptr;
 	Node->SetSoundWave(ImportedWave);
+
+	const FString Type = "SoundWave";
+	const FSlateBrush* IconBrush = FSlateIconFinder::FindCustomIconBrushForClass(FindObject<UClass>(nullptr, *("/Script/Engine." + Type)), TEXT("ClassThumbnail"));
+
+	AppendNotification(
+		FText::FromString("Sound Downloaded: " + ImportedWave->GetName()),
+		FText::FromString(""),
+		2.0f,
+		IconBrush,
+		SNotificationItem::CS_Success,
+		false,
+		310.0f
+	);
 }

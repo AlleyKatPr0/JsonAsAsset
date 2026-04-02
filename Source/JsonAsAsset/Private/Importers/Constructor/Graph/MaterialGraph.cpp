@@ -9,7 +9,7 @@
 #include "Materials/MaterialExpressionFunctionOutput.h"
 #include "Materials/MaterialExpressionReroute.h"
 #include "Utilities/AssetUtilities.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
 #include "Utilities/JsonUtilities.h"
 
 #if ENGINE_UE5
@@ -19,7 +19,7 @@
 TSharedPtr<FJsonObject> IMaterialGraph::FindMaterialData(const FString& Type, FUObjectExportContainer& Container) {
 	TSharedPtr<FJsonObject> EditorOnlyData;
 
-	for (FUObjectExport Export : AssetContainer) {
+	for (FUObjectExport& Export : AssetContainer) {
 		FString ExportType = Export.GetType().ToString();
 
 		/* If an editor only data object is found, just set it */
@@ -66,7 +66,7 @@ void IMaterialGraph::ConstructExpressions(FUObjectExportContainer& Container) {
 }
 
 void IMaterialGraph::PropagateExpressions(FUObjectExportContainer& Container) {
-	for (FUObjectExport Export : Container) {
+	for (FUObjectExport& Export : Container) {
 		/* Get variables from the export data */
 		UObject* Parent = Export.Parent;
 
@@ -82,7 +82,7 @@ void IMaterialGraph::PropagateExpressions(FUObjectExportContainer& Container) {
 			continue;
 		}
 		
-		bool bAddToParentExpression = true;
+		bool AddToParentExpression = true;
 		
 		/* Sub-graph (natively only on Unreal Engine 5) */
 		if (Properties->HasField(TEXT("SubgraphExpression"))) {
@@ -110,14 +110,14 @@ void IMaterialGraph::PropagateExpressions(FUObjectExportContainer& Container) {
 			Expression->Function = ParentSubgraphFunction;
 			ParentSubgraphFunction->FunctionExpressions.Add(Expression);
 
-			bAddToParentExpression = false;
+			AddToParentExpression = false;
 #endif
 		}
 
 		GetObjectSerializer()->DeserializeObjectProperties(Properties, Expression);
 		SetExpressionParent(Parent, Expression, Properties);
 
-		if (bAddToParentExpression) {
+		if (AddToParentExpression) {
 			AddExpressionToParent(Parent, Expression);
 		}
 	}
@@ -416,12 +416,23 @@ UMaterialExpression* IMaterialGraph::OnMissingNodeClass(FUObjectExport& Export, 
 }
 
 void IMaterialGraph::SpawnMaterialDataMissingNotification() const {
-	FNotificationInfo Info = FNotificationInfo(FText::FromString("No Material Data (" + GetAssetName() + ")"));
+	FNotificationInfo Info = FNotificationInfo(FText::FromString("Empty Material (" + GetAssetName() + ")"));
 	Info.ExpireDuration = 7.0f;
 	Info.bUseLargeFont = true;
 	Info.bUseSuccessFailIcons = true;
 	Info.WidthOverride = FOptionalSize(350);
-	SetNotificationSubText(Info, FText::FromString(FString("Your game most likely does not have material data, please see the requirements for material data on the GitHub.")));
+	SetNotificationSubText(Info, FText::FromString(FString("Please see the requirements for Materials on GitHub")));
+
+	const TSharedPtr<SNotificationItem> NotificationPtr = FSlateNotificationManager::Get().AddNotification(Info);
+	NotificationPtr->SetCompletionState(SNotificationItem::CS_Fail);
+}
+
+void IMaterialGraph::CreatedStubsNotification() const {
+	FNotificationInfo Info = FNotificationInfo(FText::FromString("Created Stubs for " + GetAssetName()));
+	Info.ExpireDuration = 7.0f;
+	Info.bUseLargeFont = true;
+	Info.bUseSuccessFailIcons = true;
+	Info.WidthOverride = FOptionalSize(350);
 
 	const TSharedPtr<SNotificationItem> NotificationPtr = FSlateNotificationManager::Get().AddNotification(Info);
 	NotificationPtr->SetCompletionState(SNotificationItem::CS_Fail);

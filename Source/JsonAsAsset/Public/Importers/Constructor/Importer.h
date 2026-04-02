@@ -2,16 +2,17 @@
 
 #pragma once
 
-#include "Utilities/Compatibility.h"
+#include "Engine/Compatibility.h"
 #include "Dom/JsonObject.h"
 #include "CoreMinimal.h"
-#include "Utilities/Serializers/SerializerContainer.h"
+#include "Containers/Serializer.h"
 
 /* ReSharper disable once CppUnusedIncludeDirective */
 #include "Macros.h"
 
 /* ReSharper disable once CppUnusedIncludeDirective */
 #include "TypesHelper.h"
+#include "Modules/UI/StyleModule.h"
 
 #include "Registry/RegistrationInfo.h"
 #include "Styling/SlateIconFinder.h"
@@ -57,8 +58,6 @@ public:
      */
     bool OnAssetCreation(UObject* Asset) const;
     
-    virtual void ApplyModifications() {};
-
     /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Object Serializer and Property Serializer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 public:
     /* Function to check if an asset needs to be imported. Once imported, the asset will be set and returned. */
@@ -66,9 +65,7 @@ public:
     FORCEINLINE static TObjectPtr<T> DownloadWrapper(TObjectPtr<T> InObject, FString Type, const FString Name, const FString Path);
 
 protected:
-    void DeserializeExports(UObject* Parent, bool bCreateObjects = true);
-    
-    FORCEINLINE FUObjectExportContainer GetExportContainer() const;
+    FORCEINLINE FUObjectExportContainer* GetExportContainer() const;
     /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ Object Serializer and Property Serializer ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 };
 
@@ -78,30 +75,29 @@ TObjectPtr<T> IImporter::DownloadWrapper(TObjectPtr<T> InObject, FString Type, c
 
     if (Type == "Texture") Type = "Texture2D";
     
-    if (Settings->bEnableCloudServer && (
+    if (Settings->EnableCloudServer && (
         InObject == nullptr ||
-            Settings->AssetSettings.Texture.bReDownloadTextures &&
-            Type == "Texture2D"
+            (Settings->AssetSettings.Texture.UpdateExisingTextures && Type == "Texture2D")
         )
         && !Path.StartsWith("Engine/") && !Path.StartsWith("/Engine/")
     ) {
         const UObject* DefaultObject = GetClassDefaultObject(T::StaticClass());
 
         if (DefaultObject != nullptr && !Name.IsEmpty() && !Path.IsEmpty()) {
-            bool bDownloadStatus = false;
+            bool DownloadStatus = false;
 
             FString NewPath = Path;
             FJRedirects::Reverse(NewPath);
             
             /* Try importing the asset */
-            if (FAssetUtilities::ConstructAsset(FSoftObjectPath(Type + "'" + NewPath + "." + Name + "'").ToString(), FSoftObjectPath(Type + "'" + NewPath + "." + Name + "'").ToString(), Type, InObject, bDownloadStatus)) {
+            if (FAssetUtilities::ConstructAsset(FSoftObjectPath(Type + "'" + NewPath + "." + Name + "'").ToString(), FSoftObjectPath(Type + "'" + NewPath + "." + Name + "'").ToString(), Type, InObject, DownloadStatus)) {
                 const FText AssetNameText = FText::FromString(Name);
                 const FSlateBrush* IconBrush = FSlateIconFinder::FindCustomIconBrushForClass(FindObject<UClass>(nullptr, *("/Script/Engine." + Type)), TEXT("ClassThumbnail"));
 
-                if (bDownloadStatus) {
+                if (DownloadStatus) {
                     AppendNotification(
-                        FText::FromString("Locally Downloaded: " + Type),
                         AssetNameText,
+                        FText::FromString(Type),
                         2.0f,
                         IconBrush,
                         SNotificationItem::CS_Success,
@@ -110,12 +106,12 @@ TObjectPtr<T> IImporter::DownloadWrapper(TObjectPtr<T> InObject, FString Type, c
                     );
                 } else {
                     AppendNotification(
-                        FText::FromString("Download Failed: " + Type),
                         AssetNameText,
+                        FText::FromString(Type),
                         5.0f,
                         IconBrush,
                         SNotificationItem::CS_Fail,
-                        false,
+                        true,
                         310.0f
                     );
                 }

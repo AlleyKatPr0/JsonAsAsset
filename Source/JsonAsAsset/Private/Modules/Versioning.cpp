@@ -7,12 +7,13 @@
 #include "Modules/Log.h"
 #include "Modules/Metadata.h"
 #include "Modules/UI/StyleModule.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
+#include "Utilities/JsonUtilities.h"
 
 FJsonAsAssetVersioning GJsonAsAssetVersioning;
 
-void FJsonAsAssetVersioning::SetValid(const bool bValid) {
-	bIsValid = bValid;
+void FJsonAsAssetVersioning::SetValid(const bool Valid) {
+	IsValid = Valid;
 }
 
 void FJsonAsAssetVersioning::Reset(const int InVersion, const int InLatestVersion, const FString& InHTMLUrl, const FString& InVersionName, const FString& InCurrentVersionName) {
@@ -21,11 +22,12 @@ void FJsonAsAssetVersioning::Reset(const int InVersion, const int InLatestVersio
 	VersionName = InVersionName;
 	CurrentVersionName = InCurrentVersionName;
 	HTMLUrl = InHTMLUrl;
-
-	bNewVersionAvailable = LatestVersion > Version;
-	bFutureVersion = Version > LatestVersion;
-	bLatestVersion = !(bNewVersionAvailable || bFutureVersion);
+	
 	SetValid(true);
+}
+
+inline int32 ConvertVersionStringToInt(const FString& VersionStr) {
+	return FCString::Atoi(*VersionStr.Replace(TEXT("."), TEXT("")));
 }
 
 void FJsonAsAssetVersioning::Update() {
@@ -63,17 +65,11 @@ void FJsonAsAssetVersioning::Update() {
 			return;
 		}
 		
-		const FString VersionName = JsonObject->GetStringField(TEXT("name"));
-		const FString CurrentVersionName = FJMetadata::Version;
-
-		const int LatestVersion = ConvertVersionStringToInt(VersionName);
-		const int CurrentVersion = ConvertVersionStringToInt(FJMetadata::Version);
-
-		Reset(CurrentVersion, LatestVersion, JsonObject->GetStringField(TEXT("html_url")), VersionName, CurrentVersionName);
+		Reset(ConvertVersionStringToInt(FJMetadata::Version), ConvertVersionStringToInt(VersionName), JsonObject->GetStringField(TEXT("html_url")), JsonObject->GetStringField(TEXT("name")), FJMetadata::Version);
 
 		static bool IsNotificationShown = false;
 
-		if (bNewVersionAvailable && !IsNotificationShown) {
+		if (IsNewVersionAvailable() && !IsNotificationShown) {
 			const FString CapturedUrl = HTMLUrl;
 
 			FNotificationInfo Info(FText::FromString(VersionName + " is now available!"));
@@ -102,4 +98,16 @@ void FJsonAsAssetVersioning::Update() {
 	const auto Response = FRemoteUtilities::ExecuteRequestSync(Request);
 
     Request->ProcessRequest();
+}
+
+bool FJsonAsAssetVersioning::IsNewVersionAvailable() const {
+	return LatestVersion > Version;
+}
+
+bool FJsonAsAssetVersioning::IsFutureVersion() const {
+	return Version > LatestVersion;
+}
+
+bool FJsonAsAssetVersioning::IsLatestVersion() const {
+	return !(IsNewVersionAvailable() || IsFutureVersion());
 }

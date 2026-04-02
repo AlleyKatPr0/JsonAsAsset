@@ -16,13 +16,14 @@
 #include "Importers/Types/Blueprint/Utilities/AnimNodeLayoutUtillties.h"
 #include "Importers/Types/Blueprint/Utilities/StateMachineUtilities.h"
 #include "Kismet2/KismetEditorUtilities.h"
-#include "Settings/Runtime.h"
+#include "Utilities/BlueprintUtilities.h"
+#include "Utilities/JsonUtilities.h"
 
 #if ENGINE_UE5
 #include "UObject/UnrealTypePrivate.h"
 #endif
 
-extern bool GShowAnimationBlueprintImporterWarning = true;
+bool GShowAnimationBlueprintImporterWarning = true;
 
 bool IAnimationBlueprintImporter::Import() {
 	if (GShowAnimationBlueprintImporterWarning) {
@@ -69,7 +70,7 @@ bool IAnimationBlueprintImporter::Import() {
 
 	/* Array of sync group names cached to use at later points of importing */
 	if (GetAssetData()->HasField(TEXT("SyncGroupNames"))) {
-		for (const TSharedPtr<FJsonValue> SyncGroupNameValue : GetAssetData()->GetArrayField(TEXT("SyncGroupNames"))) {
+		for (const auto& SyncGroupNameValue : GetAssetData()->GetArrayField(TEXT("SyncGroupNames"))) {
 			SyncGroupNames.Add(SyncGroupNameValue->AsString());
 		}
 	}
@@ -148,21 +149,9 @@ bool IAnimationBlueprintImporter::Import() {
 }
 
 UAnimBlueprint* IAnimationBlueprintImporter::CreateAnimBlueprint(UClass* ParentClass) {
-	EBlueprintType BlueprintType = BPTYPE_Normal;
+	const EBlueprintType BlueprintType = GetBlueprintType(ParentClass);
 
-	if (ParentClass->HasAnyClassFlags(CLASS_Const)) {
-		BlueprintType = BPTYPE_Const;
-	}
-	if (ParentClass == UBlueprintFunctionLibrary::StaticClass()) {
-		BlueprintType = BPTYPE_FunctionLibrary;
-	}
-	if (ParentClass == UInterface::StaticClass()) {
-		BlueprintType = BPTYPE_Interface;
-	}
-
-	UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(ParentClass, GetPackage(), FName(*GetAssetName()), BlueprintType, UAnimBlueprint::StaticClass(), UAnimBlueprintGeneratedClass::StaticClass());
-
-	if (Blueprint != nullptr) {
+	if (UBlueprint* Blueprint = FKismetEditorUtilities::CreateBlueprint(ParentClass, GetPackage(), FName(*GetAssetName()), BlueprintType, UAnimBlueprint::StaticClass(), UAnimBlueprintGeneratedClass::StaticClass())) {
 		return Cast<UAnimBlueprint>(CreateAsset(Blueprint));
 	}
 
@@ -190,7 +179,7 @@ void IAnimationBlueprintImporter::CreateGraph(const TSharedPtr<FJsonObject>& Ani
 	ConnectAnimGraphNodes(Container, AnimGraph);
 	AutoLayoutAnimGraphNodes(Container.Exports);
 
-	for (const FUObjectExport ExportNode : Container) {
+	for (const FUObjectExport& ExportNode : Container) {
 		const TSharedPtr<FJsonObject> ExportJsonObject = ExportNode.JsonObject;
 		
 		if (UAnimGraphNode_StateMachine* StateMachine = Cast<UAnimGraphNode_StateMachine>(ExportNode.Object)) {
@@ -471,7 +460,7 @@ void IAnimationBlueprintImporter::AddNodesToGraph(UEdGraph* AnimGraph, FUObjectE
 void IAnimationBlueprintImporter::HandleNodeDeserialization(FUObjectExportContainer& Container) {
 	GetObjectSerializer()->GetPropertySerializer()->BlacklistedPropertyNames.Add(TEXT("LinkID"));
 
-	for (FUObjectExport NodeExport : Container) {
+	for (FUObjectExport& NodeExport : Container) {
 		if (NodeExport.Object == nullptr) continue;
 
 		UAnimGraphNode_Base* Node = Cast<UAnimGraphNode_Base>(NodeExport.Object);
@@ -505,7 +494,7 @@ void IAnimationBlueprintImporter::HandleNodeDeserialization(FUObjectExportContai
 
 #if ENGINE_UE4
 		/* Looks like UE5 flipped axes on LocalJointOffset */
-		if (GJsonAsAssetRuntime.bUE5Target) {
+		if (GJsonAsAssetRuntime.IsUE5()) {
 			if (NodeProperties->HasField(TEXT("LocalJointOffset"))) {
 				auto LocalJointOffset = NodeProperties->GetObjectField(TEXT("LocalJointOffset"));
 				LocalJointOffset->SetNumberField("X", -LocalJointOffset->GetNumberField(TEXT("X")));
@@ -531,7 +520,7 @@ void IAnimationBlueprintImporter::HandleNodeDeserialization(FUObjectExportContai
 
 					/* Specifically use RootAnimNodeContainer, because cached poses won't move with state machines */
 					FUObjectExport SaveCachedPoseExport = RootAnimNodeContainer.Find(LinkID);
-					if (!SaveCachedPoseExport.IsValid()) continue;
+					if (!SaveCachedPoseExport.IsJsonAndObjectValid()) continue;
 
 					UAnimGraphNode_SaveCachedPose* SaveCachedPose = Cast<UAnimGraphNode_SaveCachedPose>(SaveCachedPoseExport.Object);
 					if (!SaveCachedPose) continue;
@@ -546,18 +535,20 @@ void IAnimationBlueprintImporter::HandleNodeDeserialization(FUObjectExportContai
 		HandlePropertyBinding(NodeExport, AssetContainer.JsonObjects, Node, this, AnimBlueprint);
 
 		const UJsonAsAssetSettings* Settings = GetSettings();
-		if (Settings->AssetSettings.AnimationBlueprint.bSaveNodeKeysInComments) {
+		if (Settings->AssetSettings.AnimationBlueprint.NodeIDComments) {
 			Node->NodeComment = NodeExport.GetName().ToString();
 			Node->bCommentBubbleVisible = true;
 		}
 		
 		Node->AllocateDefaultPins();
 		Node->Modify();
+		Node->PostPlacedNewNode();
 	}
 }
 
 void IAnimationBlueprintImporter::ConnectAnimGraphNodes(FUObjectExportContainer& Container, UEdGraph* AnimGraph) {
-    for (const FUObjectExport Export : Container) {
+	
+    for (const FUObjectExport& Export : Container) {
         UAnimGraphNode_Base* Node = Cast<UAnimGraphNode_Base>(Export.Object);
         const TSharedPtr<FJsonObject> Json = Export.JsonObject;
 
@@ -618,7 +609,7 @@ void IAnimationBlueprintImporter::ConnectAnimGraphNodes(FUObjectExportContainer&
                 }
             }
             
-            if (Value->Type == EJson::Object && Value->AsObject()->HasTypedField<EJson::String>("LinkID")) {
+            if (Value->Type == EJson::Object && Value->AsObject()->HasTypedField<EJson::String>(TEXT("LinkID"))) {
                 const FString LinkID = Value->AsObject()->GetStringField(TEXT("LinkID"));
                 UAnimGraphNode_Base* TargetNode = Cast<UAnimGraphNode_Base>(Container.Find(LinkID).Object);
                 
@@ -652,7 +643,7 @@ void IAnimationBlueprintImporter::ProcessEvaluateGraphExposedInputs(const TShare
 	if (!GetAssetData()->HasField(TEXT("EvaluateGraphExposedInputs"))) return;
 	TArray<TSharedPtr<FJsonValue>> EvaluateInputs = GetAssetData()->GetArrayField(TEXT("EvaluateGraphExposedInputs"));
 	
-	for (const TSharedPtr<FJsonValue> Value : EvaluateInputs) {
+	for (const auto& Value : EvaluateInputs) {
 		TSharedPtr<FJsonObject> InputObj = Value->AsObject();
 		
 		FString NodeName = InputObj->GetObjectField(TEXT("ValueHandlerNodeProperty"))->GetStringField(TEXT("ObjectName")); {

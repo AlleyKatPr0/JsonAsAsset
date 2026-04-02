@@ -1,8 +1,6 @@
 ﻿/* Copyright JsonAsAsset Contributors 2024-2026 */
 
 #include "Modules/EngineFactory.h"
-#include "Importers/Constructor/ImportReader.h"
-#include "Modules/Toolbar/Toolbar.h"
 
 UJEngineImplementation::UJEngineImplementation() {
 	Formats.Add("json;Plugin");
@@ -13,14 +11,11 @@ UJEngineImplementation::UJEngineImplementation() {
 }
 
 bool UJEngineImplementation::FactoryCanImport(const FString& Filename) {
-	return FPaths::GetExtension(Filename.ToLower()).Equals("json");
+	return false;
 }
 
 UObject* UJEngineImplementation::Import(const FString& Filename) {
-	if (!FJsonAsAssetToolbar::IsFitToFunction()) return nullptr;
-
-	IImporter* Importer = IImportReader::ImportReference(Filename);
-	return Importer->GetAsset();
+	return nullptr;
 }
 
 UObject* UJEngineImplementation::FactoryCreateFile(UClass* InClass, UObject* InParent, FName InName, EObjectFlags Flags, const FString& Filename, const TCHAR* Params, FFeedbackContext* Warn, bool& bOutOperationCanceled) {

@@ -3,7 +3,7 @@
 #include "Modules/Cloud/Tools/SkeletalMeshData.h"
 
 #include "ClothingAssetBase.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
 
 #include "Dom/JsonObject.h"
 #include "Animation/AnimSequence.h"
@@ -23,6 +23,8 @@
 
 #include "EditorFramework/AssetImportData.h"
 #include "Importers/Constructor/Importer.h"
+#include "Modules/Cloud/Cloud.h"
+#include "Utilities/JsonUtilities.h"
 
 #if ENGINE_UE5
 #include "Animation/AnimData/IAnimationDataController.h"
@@ -52,7 +54,7 @@ void TSkeletalMeshData::Execute() {
 
 	for (const FAssetData& AssetData : AssetDataList) {
 		if (!AssetData.IsValid()) continue;
-		if (AssetData.AssetClass != "SkeletalMesh") continue;
+		if (GetAssetDataClass(AssetData) != "SkeletalMesh") continue;
 		
 		UObject* Asset = AssetData.GetAsset();
 		if (Asset == nullptr) continue;
@@ -61,7 +63,7 @@ void TSkeletalMeshData::Execute() {
 		if (SkeletalMesh == nullptr) continue;
 
 		/* Request to API ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-		FString ObjectPath = AssetData.ObjectPath.ToString();
+		FString ObjectPath = GetAssetObjectPath(AssetData);
 
 		const TSharedPtr<FJsonObject> Response = Cloud::Export::GetRaw(ObjectPath);
 		if (Response == nullptr || ObjectPath.IsEmpty()) continue;
@@ -159,9 +161,10 @@ void TSkeletalMeshData::Execute() {
 				
 				SkeletalMesh->GetMeshOnlySocketList().Empty();
 
-				GetObjectSerializer()->DeserializeExports(Exports);
+				FUObjectExportContainer Container(Exports);
+				GetObjectSerializer()->DeserializeExports(Container);
 
-				for (const FUObjectExport UObjectExport : GetObjectSerializer()->GetPropertySerializer()->ExportsContainer) {
+				for (const FUObjectExport& UObjectExport : *GetObjectSerializer()->GetPropertySerializer()->ExportsContainer) {
 					if (USkeletalMeshSocket* Socket = Cast<USkeletalMeshSocket>(UObjectExport.Object)) {
 						SkeletalMesh->GetMeshOnlySocketList().Add(Socket);
 					}
@@ -225,7 +228,7 @@ void TSkeletalMeshData::Execute() {
 }
 
 TArray<FSkeletalMaterial> TSkeletalMeshData::GetMaterials(USkeletalMesh* Mesh) {
-#if UE4_27
+#if UE4_27 || ENGINE_UE5
 	return Mesh->GetMaterials();
 #else
 	return Mesh->Materials;

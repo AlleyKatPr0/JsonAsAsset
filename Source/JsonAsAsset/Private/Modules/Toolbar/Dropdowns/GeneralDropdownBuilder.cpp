@@ -2,12 +2,10 @@
 
 #include "Modules/Toolbar/Dropdowns/GeneralDropdownBuilder.h"
 
-#include "Utilities/Compatibility.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/Compatibility.h"
+#include "Engine/EngineUtilities.h"
 
 void IGeneralDropdownBuilder::Build(FMenuBuilder& MenuBuilder) const {
-	MenuBuilder.AddSeparator();
-	
 	MenuBuilder.AddMenuEntry(
 		FText::FromString("Open Plugin Settings"),
 		FText::FromString("Navigate to plugin settings"),

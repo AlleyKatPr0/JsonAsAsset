@@ -4,9 +4,10 @@
 
 #include "JsonAsAsset.h"
 #include "Modules/UI/StyleModule.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
 
 void IDonateDropdownBuilder::Build(FMenuBuilder& MenuBuilder) const {
+	MenuBuilder.EndSection();
 	MenuBuilder.BeginSection("JsonAsAssetSupportSection", FText::FromString("Support"));
 	
 	MenuBuilder.AddMenuEntry(

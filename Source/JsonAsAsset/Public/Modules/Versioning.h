@@ -8,6 +8,7 @@
 struct FJsonAsAssetVersioning {
 	/* Constructors ~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 	FJsonAsAssetVersioning() = default;
+	
 	FJsonAsAssetVersioning(const int Version, const int LatestVersion, const FString& InHTMLUrl, const FString& VersionName, const FString& CurrentVersionName)
 		: Version(Version)
 		, VersionName(VersionName)
@@ -15,21 +16,17 @@ struct FJsonAsAssetVersioning {
 		, HTMLUrl(InHTMLUrl)
 		, LatestVersion(LatestVersion)
 	{
-		bNewVersionAvailable = LatestVersion > Version;
-		bFutureVersion = Version > LatestVersion;
-        
-		bLatestVersion = !(bNewVersionAvailable || bFutureVersion);
 	}
 
 	/* Functions ~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-	void SetValid(const bool bValid);
+	void SetValid(const bool Valid);
 	void Reset(const int InVersion, const int InLatestVersion, const FString& InHTMLUrl, const FString& InVersionName, const FString& InCurrentVersionName);
 	void Update();
 	
 	/* Static Helper Variables ~~~~~~~~~~~~~~~~~~~~~~~~~~ */
-	bool bNewVersionAvailable = false;
-	bool bFutureVersion = false;
-	bool bLatestVersion = false;
+	bool IsNewVersionAvailable() const;
+	bool IsFutureVersion() const;
+	bool IsLatestVersion() const;
 
 	int Version = 0;
 	
@@ -37,9 +34,9 @@ struct FJsonAsAssetVersioning {
 	FString CurrentVersionName = "";
 	FString HTMLUrl = "";
 
-	bool bIsValid = false;
+	bool IsValid = false;
 
-	/* .uplugin Version */
+	/* .uplugin version */
 	int LatestVersion = 0;
 };
 

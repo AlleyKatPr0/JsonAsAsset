@@ -12,7 +12,8 @@
 #include "nvimage/Image.h"
 #include "Settings/Runtime.h"
 #include "ThirdParty/NVTT/ThirdParty/NVTTStream.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
+#include "Utilities/JsonUtilities.h"
 
 template bool FTextureCreatorUtilities::CreateTexture<UTexture2D>(UTexture*&, TArray<uint8>&, const TSharedPtr<FJsonObject>&);
 template bool FTextureCreatorUtilities::CreateTexture<UTextureLightProfile>(UTexture*&, TArray<uint8>&, const TSharedPtr<FJsonObject>&);
@@ -21,7 +22,7 @@ template <typename T>
 bool FTextureCreatorUtilities::CreateTexture(UTexture*& OutTexture, TArray<uint8>& Data, const TSharedPtr<FJsonObject>& Properties) {
 	UTexture2D* Texture2D;
 
-	if (bUseOctetStream) {
+	if (IsOctetStreamEnabled()) {
 		Texture2D = NewObject<T>(Package, T::StaticClass(), *AssetName, RF_Standalone | RF_Public);
 	} else {
 		UTextureFactory* TextureFactory = NewObject<UTextureFactory>();
@@ -37,7 +38,7 @@ bool FTextureCreatorUtilities::CreateTexture(UTexture*& OutTexture, TArray<uint8
 
 	DeserializeTexture2D(Texture2D, Properties->GetObjectField(TEXT("Properties")));
 
-	if (!bUseOctetStream
+	if (!IsOctetStreamEnabled()
 		&& GJsonAsAssetRuntime.IsOlderUE4Target()
 		&&
 		(
@@ -63,18 +64,10 @@ bool FTextureCreatorUtilities::CreateTexture(UTexture*& OutTexture, TArray<uint8
 	}
 
 	else {
-#if ENGINE_UE5
-		Texture2D->SetPlatformData(new FTexturePlatformData());
-#else
-		Texture2D->PlatformData = new FTexturePlatformData();
-#endif
+		SetPlatformData(Texture2D, new FTexturePlatformData());
 	}
 
-#if ENGINE_UE5
-	FTexturePlatformData* PlatformData = Texture2D->GetPlatformData();
-#else
-	FTexturePlatformData* PlatformData = Texture2D->PlatformData;
-#endif
+	FTexturePlatformData* PlatformData = GetPlatformData(Texture2D);
 
 	if (const TArray<TSharedPtr<FJsonValue>>* TextureMipsPtr; Properties->TryGetArrayField(TEXT("Mips"), TextureMipsPtr)) {
 		const auto TextureMips = *TextureMipsPtr;
@@ -84,7 +77,7 @@ bool FTextureCreatorUtilities::CreateTexture(UTexture*& OutTexture, TArray<uint8
 		}
 	}
 	
-	if (bUseOctetStream) {
+	if (IsOctetStreamEnabled()) {
 		DeserializeTexturePlatformData(Texture2D, Data, *PlatformData, Properties);
 	}
 
@@ -93,22 +86,22 @@ bool FTextureCreatorUtilities::CreateTexture(UTexture*& OutTexture, TArray<uint8
 	return false;
 }
 
+bool FTextureCreatorUtilities::IsOctetStreamEnabled() const {
+#if PLATFORM_LINUX
+	return false;
+#else
+	return UseOctetStream;
+#endif
+}
+
 bool FTextureCreatorUtilities::CreateTextureCube(UTexture*& OutTextureCube, const TArray<uint8>& Data, const TSharedPtr<FJsonObject>& Properties) const {
 	UTextureCube* TextureCube = NewObject<UTextureCube>(Package, UTextureCube::StaticClass(), *AssetName, RF_Public | RF_Standalone);
 
-#if ENGINE_UE5
-	TextureCube->SetPlatformData(new FTexturePlatformData());
-#else
-	TextureCube->PlatformData = new FTexturePlatformData();
-#endif
-
+	SetPlatformData(TextureCube, new FTexturePlatformData());
+	
 	DeserializeTexture(TextureCube, Properties);
 
-#if ENGINE_UE5
-	FTexturePlatformData* PlatformData = TextureCube->GetPlatformData();
-#else
-	FTexturePlatformData* PlatformData = TextureCube->PlatformData;
-#endif
+	FTexturePlatformData* PlatformData = GetPlatformData(TextureCube);
 
 	const int SizeX = Properties->GetNumberField(TEXT("SizeX"));
 	const int SizeY = Properties->GetNumberField(TEXT("SizeY")) / 6;
@@ -144,16 +137,10 @@ bool FTextureCreatorUtilities::CreateVolumeTexture(UTexture*& OutVolumeTexture, 
 
 	DeserializeTexture(VolumeTexture, Properties);
 
-#if ENGINE_UE5
-	VolumeTexture->SetPlatformData(new FTexturePlatformData());
-#endif
+	SetPlatformData(VolumeTexture, new FTexturePlatformData());
 	FString PixelFormat;
 
-#if ENGINE_UE5
-	FTexturePlatformData* PlatformData = VolumeTexture->GetPlatformData();
-#else
-	FTexturePlatformData* PlatformData = VolumeTexture->PlatformData;
-#endif
+	FTexturePlatformData* PlatformData = GetPlatformData(VolumeTexture);
 
 	if (PlatformData != nullptr) {
 		if (Properties->TryGetStringField(TEXT("PixelFormat"), PixelFormat)) {
@@ -239,11 +226,8 @@ bool FTextureCreatorUtilities::DeserializeTexture2D(UTexture2D* InTexture2D, con
 	if (Properties->TryGetBoolField(TEXT("bHasBeenPaintedInEditor"), bHasBeenPaintedInEditor)) InTexture2D->bHasBeenPaintedInEditor = bHasBeenPaintedInEditor;
 
 	/* ~~~~~~~~~~~~~ Platform Data ~~~~~~~~~~~~~ */
-#if ENGINE_UE5
-	FTexturePlatformData* PlatformData = InTexture2D->GetPlatformData();
-#else
-	FTexturePlatformData* PlatformData = InTexture2D->PlatformData;
-#endif
+	FTexturePlatformData* PlatformData = GetPlatformData(InTexture2D);
+	
 	int SizeX;
 	int SizeY;
 	uint32 PackedData;
@@ -266,8 +250,7 @@ bool FTextureCreatorUtilities::DeserializeTexture2D(UTexture2D* InTexture2D, con
 bool FTextureCreatorUtilities::DeserializeTexture(UTexture* Texture, const TSharedPtr<FJsonObject>& Properties) const {
 	if (Texture == nullptr) return false;
 
-	GetObjectSerializer()->DeserializeObjectProperties(RemovePropertiesShared(Properties,
-	{
+	GetObjectSerializer()->DeserializeObjectProperties(RemovePropertiesShared(Properties, {
 		"ImportedSize",
 		"LODBias"
 	}), Texture);
@@ -291,7 +274,7 @@ bool FTextureCreatorUtilities::DeserializeTexturePlatformData(UTexture* Texture,
 	if (TexturePlatformData.PixelFormat == PF_B8G8R8A8 || TexturePlatformData.PixelFormat == PF_FloatRGBA || TexturePlatformData.PixelFormat == PF_G16) Size = Data.Num();
 	uint8* DecompressedData = static_cast<uint8*>(FMemory::Malloc(Size));
 
-	if (bUseOctetStream) {
+	if (IsOctetStreamEnabled()) {
 		GetDecompressedTextureData(Data.GetData(), DecompressedData, SizeX, SizeY, SizeZ, Size, TexturePlatformData.PixelFormat);
 	} else {
 		DecompressedData = Data.GetData();
@@ -319,6 +302,7 @@ bool FTextureCreatorUtilities::DeserializeTexturePlatformData(UTexture* Texture,
 }
 
 void FTextureCreatorUtilities::GetDecompressedTextureData(uint8* Data, uint8*& OutData, const int SizeX, const int SizeY, const int SizeZ, const int TotalSize, const EPixelFormat Format) {
+#if PLATFORM_WINDOWS
 	/* NOTE: Not all formats are supported, feel free to add if needed. Formats may need other dependencies. */
 	switch (Format) {
 		case PF_BC7: {
@@ -420,4 +404,5 @@ void FTextureCreatorUtilities::GetDecompressedTextureData(uint8* Data, uint8*& O
 		}
 		break;
 	}
+#endif
 }

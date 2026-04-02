@@ -6,11 +6,18 @@
 #include "GenericPlatform/GenericPlatformHttp.h"
 #include "Settings/JsonAsAssetSettings.h"
 #include "Settings/Runtime.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
 #include "Utilities/RemoteUtilities.h"
 
 TSharedPtr<FJsonObject> Cloud::Export::Get(const TMap<FString, FString>& Parameters, const TMap<FString, FString>& Headers) {
 	return Cloud::Get(ExportURL, Parameters, Headers);
+}
+
+void Cloud::Export::GetAsync(const FString& Path, const bool Raw, TMap<FString, FString> Parameters, const TMap<FString, FString>& Headers, const TFunction<void(TSharedPtr<FJsonObject>)>& OnResponse) {
+	Parameters.Add(TEXT("path"), Path);
+	Parameters.Add(TEXT("raw"), Raw ? TEXT("true") : TEXT("false"));
+
+	Cloud::Get(ExportURL, Parameters, Headers, OnResponse);
 }
 
 TSharedPtr<FJsonObject> Cloud::Export::Get(const FString& Path, const bool Raw, TMap<FString, FString> Parameters, const TMap<FString, FString>& Headers) {
@@ -22,6 +29,12 @@ TSharedPtr<FJsonObject> Cloud::Export::Get(const FString& Path, const bool Raw, 
 
 TSharedPtr<FJsonObject> Cloud::Export::GetRaw(const FString& Path, const TMap<FString, FString>& Parameters, const TMap<FString, FString>& Headers) {
 	return Get(Path, true, Parameters, Headers);
+}
+
+void Cloud::Export::GetRaw(const FString& Path, const TMap<FString, FString>& Parameters, const TMap<FString, FString>& Headers, TFunction<void(TSharedPtr<FJsonObject>)> OnResponse) {
+	GetAsync(Path, true, Parameters, Headers,[OnResponse](const TSharedPtr<FJsonObject>& Json) {
+		OnResponse(Json);
+	});
 }
 
 TArray<TSharedPtr<FJsonValue>> Cloud::Export::Array::Get(const TMap<FString, FString>& Parameters, const TMap<FString, FString>& Headers) {
@@ -49,11 +62,11 @@ auto Cloud::SendRequest(const FString& RequestURL, const TMap<FString, FString>&
 	FString FullUrl = URL + RequestURL;
 	
 	if (Parameters.Num() > 0) {
-		bool bFirst = true;
+		bool First = true;
 
 		for (const auto& Pair : Parameters) {
-			FullUrl += bFirst ? TEXT("?") : TEXT("&");
-			bFirst = false;
+			FullUrl += First ? TEXT("?") : TEXT("&");
+			First = false;
 
 			FullUrl += FString::Printf(
 				TEXT("%s=%s"),
@@ -96,6 +109,42 @@ TSharedPtr<FJsonObject> Cloud::Get(const FString& RequestURL, const TMap<FString
 	return TSharedPtr<FJsonObject>();
 }
 
+void Cloud::Get(const FString& RequestURL,
+	const TMap<FString, FString>& Parameters,
+	const TMap<FString, FString>& Headers,
+	TFunction<void(TSharedPtr<FJsonObject>)> OnComplete)
+{
+	auto Request = SendRequest(RequestURL, Parameters, Headers);
+	Request->SetVerb(TEXT("GET"));
+
+	FRemoteUtilities::ExecuteRequestAsync(Request, [OnComplete](auto Response) {
+		if (!Response.IsValid()) {
+			OnComplete(nullptr);
+			return;
+		}
+
+		if (!Response->GetHeader("Content-Type").Contains(TEXT("json"))) {
+			OnComplete(nullptr);
+			return;
+		}
+
+		if (Response->GetResponseCode() != 200) {
+			OnComplete(nullptr);
+			return;
+		}
+
+		TSharedPtr<FJsonObject> JsonObject;
+		const TSharedRef<TJsonReader<>> JsonReader = TJsonReaderFactory<>::Create(Response->GetContentAsString());
+
+		if (!FJsonSerializer::Deserialize(JsonReader, JsonObject)) {
+			OnComplete(nullptr);
+			return;
+		}
+
+		OnComplete(JsonObject);
+	});
+}
+
 TArray<uint8> Cloud::GetRaw(const FString& RequestURL, const TMap<FString, FString>& Parameters,
 	const TMap<FString, FString>& Headers) {
 	const auto Request = SendRequest(RequestURL, Parameters, Headers);
@@ -114,38 +163,47 @@ TArray<TSharedPtr<FJsonValue>> Cloud::GetExports(const FString& RequestURL, cons
 	return JsonObject->GetArrayField(TEXT("exports"));
 }
 
-bool Cloud::Update() {
+void Cloud::Update(TFunction<void(bool)> OnResponse) {
 	UJsonAsAssetSettings* MutableSettings = GetSettings();
-	if (!MutableSettings->bEnableCloudServer) return false;
 	
-	const auto MetadataResponse = Get("/api/metadata");
-	if (!MetadataResponse.IsValid()) return false;
-	
-	if (MetadataResponse->HasField(TEXT("name"))) {
-		FString Name = MetadataResponse->GetStringField(TEXT("name"));
-		MutableSettings->AssetSettings.ProjectName = Name;
+	if (!MutableSettings->EnableCloudServer) {
+		OnResponse(false);
+		
+		return;
 	}
 
-	if (MetadataResponse->HasField(TEXT("major_version"))) {
-		const int MajorVersion = MetadataResponse->GetIntegerField(TEXT("major_version"));
-
-		GJsonAsAssetRuntime.MajorVersion = MajorVersion;
-		GJsonAsAssetRuntime.bUE5Target = MajorVersion == 5;
-	}
-
-	if (MetadataResponse->HasField(TEXT("minor_version"))) {
-		const int MinorVersion = MetadataResponse->GetIntegerField(TEXT("minor_version"));
+	Get("/api/metadata", {}, {}, [MutableSettings, OnResponse](const TSharedPtr<FJsonObject>& MetadataResponse) {
+		if (!MetadataResponse.IsValid()) {
+			OnResponse(false);
 			
-		GJsonAsAssetRuntime.MinorVersion = MinorVersion;
-	}
+			return;
+		}
+		
+		if (MetadataResponse->HasField(TEXT("name"))) {
+			FString Name = MetadataResponse->GetStringField(TEXT("name"));
+			MutableSettings->AssetSettings.ProjectName = Name;
+		}
 
-	if (MetadataResponse->HasField(TEXT("profile"))) {
-		const auto Profile = MetadataResponse->GetObjectField(TEXT("profile"));
+		if (MetadataResponse->HasField(TEXT("major_version"))) {
+			const int MajorVersion = MetadataResponse->GetIntegerField(TEXT("major_version"));
 
-		GJsonAsAssetRuntime.Profile.Name = Profile->GetStringField(TEXT("name"));
-	}
+			GJsonAsAssetRuntime.MajorVersion = MajorVersion;
+		}
 
-	SavePluginConfig(MutableSettings);
+		if (MetadataResponse->HasField(TEXT("minor_version"))) {
+			const int MinorVersion = MetadataResponse->GetIntegerField(TEXT("minor_version"));
+				
+			GJsonAsAssetRuntime.MinorVersion = MinorVersion;
+		}
 
-	return true;
+		if (MetadataResponse->HasField(TEXT("profile"))) {
+			const auto Profile = MetadataResponse->GetObjectField(TEXT("profile"));
+
+			GJsonAsAssetRuntime.Profile.Name = Profile->GetStringField(TEXT("name"));
+		}
+
+		SavePluginSettings(MutableSettings);
+
+		OnResponse(true);
+	});
 }

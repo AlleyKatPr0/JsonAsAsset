@@ -2,11 +2,14 @@
 
 #include "Modules/Toolbar/Dropdowns/CloudToolsDropdownBuilder.h"
 
-#include "Utilities/EngineUtilities.h"
+#include "Modules/Cloud/Cloud.h"
+#include "Engine/EngineUtilities.h"
 
 #include "Modules/Cloud/Tools/AnimationData.h"
 #include "Modules/Cloud/Tools/ConvexCollision.h"
+#include "Modules/Cloud/Tools/FontData.h"
 #include "Modules/Cloud/Tools/SkeletalMeshData.h"
+#include "Modules/Cloud/Tools/WidgetAnimations.h"
 
 void ICloudToolsDropdownBuilder::Build(FMenuBuilder& MenuBuilder) const {
 	static TSkeletalMeshData* SkeletalMeshTool;
@@ -15,12 +18,12 @@ void ICloudToolsDropdownBuilder::Build(FMenuBuilder& MenuBuilder) const {
 		SkeletalMeshTool = new TSkeletalMeshData();
 	}
 	
-	MenuBuilder.BeginSection("JsonAsAssetCloudToolsSection", FText::FromString("Cloud Tools"));
+	MenuBuilder.BeginSection("JsonAsAssetCloudSection", FText::FromString("Cloud"));
 	
 	MenuBuilder.AddMenuEntry(
-		FText::FromString("Import Static Mesh Properties"),
-		FText::FromString("Imports collision, properties and more using Cloud and applies it to the corresponding assets in the content browser folder."),
-		FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.BspMode"),
+		FText::FromString("Static Meshes"),
+		FText::FromString("Imports collision and other properties"),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), "ClassIcon.StaticMeshActor"),
 
 		FUIAction(
 			FExecuteAction::CreateLambda([] {
@@ -35,9 +38,9 @@ void ICloudToolsDropdownBuilder::Build(FMenuBuilder& MenuBuilder) const {
 	);
 
 	MenuBuilder.AddMenuEntry(
-		FText::FromString("Import Animation Data"),
-		FText::FromString("Imports Animation Data using Cloud and applies it to the corresponding assets in the content browser folder."),
-		FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.BspMode"),
+		FText::FromString("Animations"),
+		FText::FromString("Imports curve data, notifies and other properties"),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), "GraphEditor.Animation_24x"),
 
 		FUIAction(
 			FExecuteAction::CreateLambda([] {
@@ -52,16 +55,49 @@ void ICloudToolsDropdownBuilder::Build(FMenuBuilder& MenuBuilder) const {
 	);
 
 	MenuBuilder.AddMenuEntry(
-		FText::FromString("Import Skeletal Mesh Data"),
-		FText::FromString("Imports Skeletal Mesh Data using Cloud and applies it to the corresponding assets in the content browser folder."),
-		FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.BspMode"),
+		FText::FromString("Skeletal Meshes"),
+		FText::FromString("Imports sockets and other properties"),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), "ClassIcon.SkeletalMeshComponent"),
 
 		FUIAction(
 			FExecuteAction::CreateLambda([] {
-				if (SkeletalMeshTool != nullptr)
-				{
+				if (SkeletalMeshTool != nullptr) {
 					SkeletalMeshTool->Execute();
 				}
+			}),
+			FCanExecuteAction::CreateLambda([this] {
+				return Cloud::Status::IsOpened();
+			})
+		),
+		NAME_None
+	);
+
+	MenuBuilder.AddMenuEntry(
+		FText::FromString("Fonts"),
+		FText::FromString("Imports font properties (not vectorized data)"),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), "ClassIcon.FontFace"),
+
+		FUIAction(
+			FExecuteAction::CreateLambda([] {
+				TToolFontData* Tool = new TToolFontData();
+				Tool->Execute();
+			}),
+			FCanExecuteAction::CreateLambda([this] {
+				return Cloud::Status::IsOpened();
+			})
+		),
+		NAME_None
+	);
+	
+	MenuBuilder.AddMenuEntry(
+		FText::FromString("Widget Animations"),
+		FText::FromString("Imports widget animations"),
+		FSlateIcon(FAppStyle::GetAppStyleSetName(), "ClassIcon.WidgetBlueprint"),
+
+		FUIAction(
+			FExecuteAction::CreateLambda([] {
+				TWidgetAnimations* Tool = new TWidgetAnimations();
+				Tool->Execute();
 			}),
 			FCanExecuteAction::CreateLambda([this] {
 				return Cloud::Status::IsOpened();

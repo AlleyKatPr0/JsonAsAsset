@@ -1,10 +1,11 @@
 /* Copyright JsonAsAsset Contributors 2024-2026 */
 
 #include "Importers/Types/Physics/PhysicsAssetImporter.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
 
 #include "PhysicsEngine/PhysicsConstraintTemplate.h"
 #include "Settings/Runtime.h"
+#include "Utilities/JsonUtilities.h"
 
 UObject* IPhysicsAssetImporter::CreateAsset(UObject* CreatedAsset) {
 	return IImporter::CreateAsset(NewObject<UPhysicsAsset>(GetPackage(), UPhysicsAsset::StaticClass(), *GetAssetName(), RF_Public | RF_Standalone));
@@ -21,14 +22,14 @@ bool IPhysicsAssetImporter::Import() {
 	UPhysicsAsset* PhysicsAsset = Create<UPhysicsAsset>();
 
 	DeserializeExports(PhysicsAsset, false);
-	FUObjectExportContainer ExportContainer = GetExportContainer();
+	FUObjectExportContainer* ExportContainer = GetExportContainer();
 
 	/* SkeletalBodySetups ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 	const FString SkeletalBodySetupsName = !GJsonAsAssetRuntime.IsOlderUE4Target() ? "SkeletalBodySetups" : "BodySetup";
 
 	ProcessJsonArrayField(GetAssetData(), SkeletalBodySetupsName, [&](const TSharedPtr<FJsonObject>& ObjectField) {
 		const FName ExportName = GetExportNameOfSubobject(ObjectField->GetStringField(TEXT("ObjectName")));
-		const TSharedPtr<FJsonObject> ExportJson = ExportContainer.Find(ExportName).JsonObject;
+		const TSharedPtr<FJsonObject> ExportJson = ExportContainer->Find(ExportName).JsonObject;
 
 		const TSharedPtr<FJsonObject> ExportProperties = ExportJson->GetObjectField(TEXT("Properties"));
 		const FName BoneName = FName(*ExportProperties->GetStringField(TEXT("BoneName")));
@@ -45,7 +46,7 @@ bool IPhysicsAssetImporter::Import() {
 	/* CollisionDisableTable ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 	TArray<TSharedPtr<FJsonValue>> CollisionDisableTable = GetAssetData()->GetArrayField(TEXT("CollisionDisableTable"));
 
-	for (const TSharedPtr TableJSONElement : CollisionDisableTable) {
+	for (const auto& TableJSONElement : CollisionDisableTable) {
 		const TSharedPtr<FJsonObject> TableObjectElement = TableJSONElement->AsObject();
 
 		bool MapValue = TableObjectElement->GetBoolField(TEXT("Value"));
@@ -61,7 +62,7 @@ bool IPhysicsAssetImporter::Import() {
 	/* ConstraintSetup ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 	ProcessJsonArrayField(GetAssetData(), TEXT("ConstraintSetup"), [&](const TSharedPtr<FJsonObject>& ObjectField) {
 		const FName ExportName = GetExportNameOfSubobject(ObjectField->GetStringField(TEXT("ObjectName")));
-		const TSharedPtr<FJsonObject> ExportJson = ExportContainer.Find(ExportName).JsonObject;
+		const TSharedPtr<FJsonObject> ExportJson = ExportContainer->Find(ExportName).JsonObject;
 
 		const TSharedPtr<FJsonObject> ExportProperties = ExportJson->GetObjectField(TEXT("Properties"));
 		UPhysicsConstraintTemplate* PhysicsConstraintTemplate = CreateNewConstraint(PhysicsAsset, ExportName);

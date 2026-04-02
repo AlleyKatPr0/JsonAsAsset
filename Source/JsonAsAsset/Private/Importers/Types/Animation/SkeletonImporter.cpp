@@ -2,6 +2,10 @@
 
 #include "Importers/Types/Animation/SkeletonImporter.h"
 
+#if ENGINE_UE4
+#include "Utilities/JsonUtilities.h"
+#endif
+
 UObject* ISkeletonImporter::CreateAsset(UObject* CreatedAsset) {
 	return IImporter::CreateAsset(NewObject<USkeleton>(GetPackage(), USkeleton::StaticClass(), *GetAssetName(), RF_Public | RF_Standalone));
 }
@@ -73,7 +77,7 @@ void ISkeletonImporter::ApplyModifications() {
 
 #if ENGINE_UE4
 	/* If this export is found, this means the data is from UE5, and since we're on UE4, we need to move this into where it would be in UE4 */
-	const FUObjectExport AnimCurveMetaData = GetExportContainer().FindByType(FString("AnimCurveMetaData"));
+	const FUObjectExport AnimCurveMetaData = GetExportContainer()->FindByType(FString("AnimCurveMetaData"));
 
 	if (AnimCurveMetaData.IsJsonValid()) {
 		const TSharedPtr<FJsonObject> CurveMetaDataProperties = AnimCurveMetaData.GetProperties();
@@ -112,7 +116,7 @@ void ISkeletonImporter::ApplySkeletalChanges(USkeleton* Skeleton) const {
 	int BoneIndex = 0;
 
 	/* Go through each bone reference */
-	for (const TSharedPtr<FJsonValue> FinalReferenceBoneInfoValue : FinalRefBoneInfo) {
+	for (const auto& FinalReferenceBoneInfoValue : FinalRefBoneInfo) {
 		const TSharedPtr<FJsonObject> FinalReferenceBoneInfo = FinalReferenceBoneInfoValue->AsObject();
 
 		FName Name(*FinalReferenceBoneInfo->GetStringField(TEXT("Name")));

@@ -1,6 +1,7 @@
 /* Copyright JsonAsAsset Contributors 2024-2026 */
 
 #include "Importers/Types/Materials/MaterialImporter.h"
+#include "Importers/Types/Materials/MaterialStubs.h"
 
 /* Include Material.h (depends on UE Version) */
 #if (ENGINE_UE5 && ENGINE_MINOR_VERSION < 3) || ENGINE_UE4
@@ -9,8 +10,18 @@
 #include "MaterialDomain.h"
 #endif
 
+#include "MaterialCachedData.h"
 #include "Factories/MaterialFactoryNew.h"
 #include "Settings/JsonAsAssetSettings.h"
+
+#if ENGINE_UE5
+class UMaterialAccessor final : public UMaterial {
+public:
+	FMaterialCachedExpressionData* GetCachedExpressionDataRef() const {
+		return CachedExpressionData.Get();
+	}
+};
+#endif
 
 UObject* IMaterialImporter::CreateAsset(UObject* CreatedAsset) {
 	/* Create Material Factory (factory automatically creates the Material) */
@@ -36,18 +47,27 @@ bool IMaterialImporter::Import() {
 
 	/* Map out each expression for easier access */
 	ConstructExpressions(ExpressionContainer);
+
+	const UJsonAsAssetSettings* Settings = GetSettings();
 	
 	/* If Missing Material Data */
 	if (ExpressionContainer.Num() == 0) {
-		SpawnMaterialDataMissingNotification();
-
-		return false;
+#if ENGINE_UE5
+		if (GetSettings()->AssetSettings.Material.Stubs) {
+			CreateStubs(this);
+			CreatedStubsNotification();
+		}
+		else {
+#endif
+			SpawnMaterialDataMissingNotification();
+#if ENGINE_UE5
+			return false;
+		}
+#endif
 	}
 
 	/* Iterate through all the expressions, and set properties */
 	PropagateExpressions(ExpressionContainer);
-
-	const UJsonAsAssetSettings* Settings = GetSettings();
 
 #if ENGINE_UE5
 	UMaterialEditorOnlyData* EditorOnlyData = Material->GetEditorOnlyData();
@@ -55,7 +75,7 @@ bool IMaterialImporter::Import() {
 	UMaterial* EditorOnlyData = Material;
 #endif
 	
-	if (!Settings->AssetSettings.Material.bSkipResultNodeConnection) {
+	if (!Settings->AssetSettings.Material.DisconnectRoot) {
 		TArray<FString> IgnoredProperties = TArray<FString> {
 			"ParameterGroupData",
 			"ExpressionCollection",
@@ -77,7 +97,7 @@ bool IMaterialImporter::Import() {
 		
 		if (Props->TryGetArrayField(TEXT("CustomizedUVs"), InputsPtr)) {
 			int i = 0;
-			for (const TSharedPtr<FJsonValue> InputValue : *InputsPtr) {
+			for (const auto& InputValue : *InputsPtr) {
 				FJsonObject* InputObject = InputValue->AsObject().Get();
 				FName InputExpressionName = GetExpressionName(InputObject);
 
@@ -94,7 +114,7 @@ bool IMaterialImporter::Import() {
 	if (Props->TryGetArrayField(TEXT("ParameterGroupData"), StringParameterGroupData)) {
 		TArray<FParameterGroupData> ParameterGroupData;
 
-		for (const TSharedPtr<FJsonValue> ParameterGroupDataObject : *StringParameterGroupData) {
+		for (const auto& ParameterGroupDataObject : *StringParameterGroupData) {
 			if (ParameterGroupDataObject->IsNull()) continue;
 			FParameterGroupData GroupData;
 
@@ -129,6 +149,18 @@ bool IMaterialImporter::Import() {
 	/* Deserialize any properties */
 	GetObjectSerializer()->DeserializeObjectProperties(GetAssetData(), Material);
 
+#if ENGINE_UE5
+	/* Update Cached Expression Data */
+	if (AssetExport.GetJsonObject().Has("CachedExpressionData")) {
+		FUObjectJsonValueExport CachedExpressionData = AssetExport.GetJsonObject().GetObject("CachedExpressionData");
+
+		UMaterialAccessor* Accessor = Cast<UMaterialAccessor>(Material);
+		FMaterialCachedExpressionData* CachedData = Accessor->GetCachedExpressionDataRef();
+
+		/*GetPropertySerializer()->DeserializeStruct(FMaterialCachedExpressionData::StaticStruct(), CachedExpressionData.JsonObject.ToSharedRef(), CachedData);*/
+	}
+#endif
+	
 	/* Move Material Result Node ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 	UMaterialExpression* PositionalExpression = EditorOnlyData->BaseColor.Expression;
 	if (UMaterialExpression* MaterialAttributes = EditorOnlyData->MaterialAttributes.Expression) {

@@ -135,7 +135,7 @@ Follow these steps to install **JsonAsAsset**:
 
 <a name="cloud"></a>
 ### Set up the Cloud ✨
-Make sure Cloud is enabled in Plugin Settings, and set up a Cloud Server. [Click here to get to Cloud releases.](https://github.com/Tectors/j0.dev/releases)
+Make sure Cloud is enabled in Plugin Settings, and set up a Cloud Server. [Click here to get to Cloud releases.](https://github.com/Tectors/Core/releases)
 
 Once the Cloud is started, JsonAsAsset will fetch almost every referenced asset for you hands-free.
 
@@ -159,7 +159,7 @@ Once the Cloud is started, JsonAsAsset will fetch almost every referenced asset 
   
 This is a known issue in our code that we haven't fully resolved yet. While previous attempts to fix it have been unsuccessful, here's a partial solution to reduce its occurrence:
 
-- Re-launch your Unreal Engine project, go to JsonAsAsset's plugin settings and enable ***"Skip Result Node Connection"***. Also enable ***"Allow Package Saving"***.
+- Re-launch your Unreal Engine project, go to JsonAsAsset's plugin settings and enable ***"Disconnect Root"***. Also enable ***"Save Assets"***.
 </details>
 
 <a name="contribute"></a>
@@ -183,6 +183,7 @@ Thanks go to these wonderful people:
 - Logo uses a font by [Brylark](https://ko-fi.com/brylark), support him at his ko-fi!
 
 #### [Would you like to contribute?](https://github.com/JsonAsAsset/JsonAsAsset/blob/main/Source/README.md#key-information-for-contributors-)
+
 
 
 

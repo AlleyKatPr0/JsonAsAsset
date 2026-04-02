@@ -2,9 +2,11 @@
 
 #pragma once
 
-#include "Utilities/Compatibility.h"
+#include "HttpModule.h"
+#include "Engine/Compatibility.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
+#include "Modules/Log.h"
 
 class JSONASASSET_API FRemoteUtilities {
 public:
@@ -19,4 +21,48 @@ public:
 		/* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 		
 		float LoopDelay = 0.02);
+
+	static void ExecuteRequestAsync(
+
+#if ENGINE_UE5
+		TSharedRef<IHttpRequest> HttpRequest,
+#else
+		const TSharedRef<IHttpRequest, ESPMode::ThreadSafe>& HttpRequest,
+#endif
+
+		TFunction<void(
+#if ENGINE_UE5
+			TSharedPtr<IHttpResponse>
+#else
+			TSharedPtr<IHttpResponse, ESPMode::ThreadSafe>
+#endif
+		)> OnComplete
+	);
 };
+
+inline void SendHttpRequest(const FString& URL, TFunction<void(FHttpRequestPtr, FHttpResponsePtr, bool)> OnComplete, const FString& Verb = "GET", const FString& ContentType = "", const FString& Content = "") {
+	FHttpModule* Http = &FHttpModule::Get();
+	if (!Http) {
+		UE_LOG(LogJsonAsAsset, Error, TEXT("HTTP module not available"));
+		return;
+	}
+
+	const auto Request = Http->CreateRequest();
+	
+	Request->SetURL(URL);
+	Request->SetVerb(Verb);
+
+	if (!ContentType.IsEmpty()) {
+		Request->SetHeader(TEXT("Content-Type"), ContentType);
+	}
+    
+	if (!Content.IsEmpty()) {
+		Request->SetContentAsString(Content);
+	}
+
+	Request->OnProcessRequestComplete().BindLambda([OnComplete](const FHttpRequestPtr& RequestPtr, const FHttpResponsePtr& Response, const bool bWasSuccessful) {
+		OnComplete(RequestPtr, Response, bWasSuccessful);
+	});
+
+	Request->ProcessRequest();
+}

@@ -3,7 +3,7 @@
 #pragma once
 
 #include "Importers/Constructor/Types.h"
-#include "Utilities/EngineUtilities.h"
+#include "Engine/EngineUtilities.h"
 #include "Settings/JsonAsAssetSettings.h"
 
 class IImporter;
@@ -35,7 +35,7 @@ inline FImporterFactoryDelegate* FindFactoryForAssetType(const FString& AssetTyp
 	const UJsonAsAssetSettings* Settings = GetSettings();
 
 	for (auto& Pair : GetFactoryRegistry()) {
-		if (!Settings->bEnableExperiments) {
+		if (!Settings->EnableExperiments) {
 			if (ImportTypes::Experimental.Contains(AssetType)) return nullptr;
 		}
             

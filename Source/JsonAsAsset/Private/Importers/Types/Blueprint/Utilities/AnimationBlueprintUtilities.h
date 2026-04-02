@@ -6,7 +6,8 @@
 #include "AnimGraphNode_BlendListByEnum.h"
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
-#include "Utilities/Serializers/ObjectUtilities.h"
+#include "Serializers/ObjectSerializer.h"
+#include "Utilities/JsonUtilities.h"
 
 inline FStructProperty* GetNodeStructProperty(const UAnimGraphNode_Base* Node) {
 	if (!Node) return nullptr;
@@ -165,8 +166,8 @@ inline void HandlePropertyBinding(FUObjectExport NodeExport, const TArray<TShare
 			const TArray<TSharedPtr<FJsonValue>> CopyRecords = EvaluateGraphExposedInputs->GetArrayField(TEXT("CopyRecords"));
 
 			if (CopyRecords.Num() > 0) {
-				for (const TSharedPtr<FJsonValue> CopyRecordAsValue : CopyRecords) {
-					const TSharedPtr<FJsonObject> CopyRecordAsObject = CopyRecordAsValue->AsObject();
+				for (const auto& CopyRecordAsValue : CopyRecords) {
+					const TSharedPtr<FJsonObject>& CopyRecordAsObject = CopyRecordAsValue->AsObject();
 
 					if (!CopyRecordAsObject->HasField(TEXT("DestProperty"))) continue;
 					if (CopyRecordAsObject->HasField(TEXT("BoundFunction")) && CopyRecordAsObject->GetStringField(TEXT("BoundFunction")) != TEXT("None")) {

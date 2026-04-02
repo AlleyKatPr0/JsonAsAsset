@@ -4,10 +4,16 @@
 
 #include "Importers/Constructor/Importer.h"
 #include "Importers/Constructor/ImportReader.h"
-#include "Modules/Toolbar/Dropdowns/CloudToolsDropdownBuilder.h"
-#include "Utilities/EngineUtilities.h"
 
-#include "Modules/Tools/ClearImportData.h"
+#if ENGINE_UE4
+#include "Modules/Toolbar/Dropdowns/CloudToolsDropdownBuilder.h"
+#endif
+
+#include "Engine/EngineUtilities.h"
+
+#include "Modules/Toolbar/Tools/ClearImportData.h"
+#include "Modules/Toolbar/Tools/FixUpAssetData.h"
+#include "Utilities/DialogUtilities.h"
 
 void IToolsDropdownBuilder::Build(FMenuBuilder& MenuBuilder) const {
 	UJsonAsAssetSettings* Settings = GetSettings();
@@ -26,6 +32,20 @@ void IToolsDropdownBuilder::Build(FMenuBuilder& MenuBuilder) const {
 					FUIAction(
 						FExecuteAction::CreateLambda([] {
 							TToolClearImportData* Tool = new TToolClearImportData();
+							Tool->Execute();
+						})
+					),
+					NAME_None
+				);
+
+				InnerMenuBuilder.AddMenuEntry(
+					FText::FromString("Fixup Asset Data"),
+					FText::FromString(""),
+					FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.BspMode"),
+
+					FUIAction(
+						FExecuteAction::CreateLambda([] {
+							TToolFixUpAssetData* Tool = new TToolFixUpAssetData();
 							Tool->Execute();
 						})
 					),
@@ -59,19 +79,8 @@ void IToolsDropdownBuilder::Build(FMenuBuilder& MenuBuilder) const {
 					NAME_None
 				);
 
-#if ENGINE_UE4
-				if (Settings->bEnableCloudServer) {
-					TArray<TSharedRef<IParentDropdownBuilder>> Dropdowns = {
-						MakeShared<ICloudToolsDropdownBuilder>()
-					};
-
-					for (const TSharedRef<IParentDropdownBuilder>& Dropdown : Dropdowns) {
-						Dropdown->Build(InnerMenuBuilder);
-					}
-				}
-#endif
+				InnerMenuBuilder.EndSection();
 			}
-			InnerMenuBuilder.EndSection();
 		}),
 		false,
 		FSlateIcon(FAppStyle::GetAppStyleSetName(), "DeveloperTools.MenuIcon")
